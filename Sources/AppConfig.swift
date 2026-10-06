@@ -1,0 +1,32 @@
+import Foundation
+
+/// Static shell configuration.
+enum AppConfig {
+
+    /// Marketing version, e.g. "0.1.0" (CFBundleShortVersionString).
+    static var version: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+    }
+
+    /// Prod landing — mirrors the Android container default: opens the dashboard.
+    static let defaultURL = URL(string: "https://app.streetfoodos.com/dashboard")!
+
+    /// Dev override: launch argument `-SFOSURL https://dev.streetfoodos.com/...`
+    /// (set in the scheme; shipped builds never pass it). Mirrors the Android
+    /// container's `sfos_url` extra.
+    static var launchURL: URL {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-SFOSURL"), i + 1 < args.count, let url = URL(string: args[i + 1]) {
+            return url
+        }
+        return defaultURL
+    }
+
+    /// Hosts that stay inside the app; anything else opens in the system browser.
+    static func isAppHost(_ host: String) -> Bool {
+        host == "app.streetfoodos.com"
+            || host == "dev.streetfoodos.com"
+            || host.hasSuffix(".streetfoodos.com")
+            || host == "localhost"
+    }
+}
