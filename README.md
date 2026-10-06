@@ -4,7 +4,7 @@ Thin **WKWebView shell** around the StreetFoodOS web app, with a native offline 
 
 **Source of truth:** `docs/proposals/2026-10-06_ios-app-offline.md` in the main `StreetFoodOS` repo (private) — ratified 06/10/2026; P0–P5 build plan.
 
-**Status (06/10/2026):** P0 in progress — XcodeGen spec, WKWebView shell sources and CI (GitHub Actions: `Build check` + `TestFlight` workflows) are in. First milestone = first TestFlight build (proves the pipeline end-to-end).
+**Status (06/10/2026):** **P0 ✅** — XcodeGen spec, WKWebView shell sources and CI (GitHub Actions: `Build check` + `TestFlight` workflows) are in and green; **first TestFlight build uploaded** (App Store Connect, Apple processing) — the pipeline is proven end-to-end. Repo lives in the `cervomorph` org.
 
 ## Ground rules
 
