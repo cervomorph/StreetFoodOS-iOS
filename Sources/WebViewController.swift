@@ -17,11 +17,16 @@ final class WebViewController: UIViewController {
 
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
+        // Live INSIDE the safe area: the page viewport then equals the visible
+        // screen exactly (no scroll range hiding under the notch / home bar,
+        // which made 100vh pages scroll their inset amount and feel "springy").
+        // The notch + home strips show the view's background colour.
+        let guide = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.topAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            webView.topAnchor.constraint(equalTo: guide.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: guide.bottomAnchor),
         ])
 
         webView.navigationDelegate = self
@@ -39,6 +44,14 @@ final class WebViewController: UIViewController {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = false
+        // Kill the rubber-band "spring" (Kit feedback 06/10; parity with the
+        // Android container's OVER_SCROLL_NEVER) — pages must feel pinned.
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        // The webview already sits inside the safe area — do NOT let WebKit
+        // also inset the page itself; that double-count made every 100vh page
+        // taller than its visible area.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         return webView
     }
 }
@@ -89,7 +102,13 @@ extension WebViewController: WKNavigationDelegate {
     }
 
     private func showLoadError(_ error: Error) {
-        if (error as NSError).code == NSURLErrorCancelled { return }
+        let ns = error as NSError
+        if ns.code == NSURLErrorCancelled { return }
+        // WebKit "frame load interrupted" (101/102) = our OWN deliberate
+        // decisionHandler(.cancel) on external hand-offs (auth redirects,
+        // Safari links). Never dressed up as a connectivity failure — the
+        // scary "Can't reach StreetFoodOS" alert was entirely self-inflicted.
+        if ns.domain == "WebKitErrorDomain" && (ns.code == 101 || ns.code == 102) { return }
         // P2 replaces this with the branded offline screen + native page cache.
         let alert = UIAlertController(
             title: "Can't reach StreetFoodOS",
