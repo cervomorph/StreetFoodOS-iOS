@@ -1,11 +1,14 @@
 import UIKit
 import WebKit
+import AuthenticationServices
 
 /// The shell's single screen: a full-bleed WKWebView pointed at the web app.
 final class WebViewController: UIViewController {
 
     private let bridge = Bridge()
     private var webView: WKWebView!
+    /// Kept alive while the system sign-in sheet is up — releasing it cancels the session.
+    private var authSession: ASWebAuthenticationSession?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -78,6 +81,17 @@ extension WebViewController: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
+        // In-app sign-in (2026-10-07): start social sign-ins in the SYSTEM auth
+        // session. Google blocks OAuth inside embedded webviews entirely, and
+        // even where it didn't, the system browser's session cookies would
+        // never reach this webview. The callback returns via the
+        // `streetfoodos://` scheme and we trade a one-time token for session
+        // cookies inside the webview (/auth/app-session).
+        if AppConfig.isAppHost(url.host ?? ""), isAuthInitiation(url) {
+            decisionHandler(.cancel)
+            startAppAuthSession(startingAt: url)
+            return
+        }
         if navigationAction.targetFrame == nil {
             // target=_blank (receipts, external docs) — never silently drop.
             UIApplication.shared.open(url)
@@ -119,6 +133,65 @@ extension WebViewController: WKNavigationDelegate {
             self?.webView.reload()
         })
         present(alert, animated: true)
+    }
+}
+
+// MARK: - In-app sign-in (ASWebAuthenticationSession)
+
+extension WebViewController: ASWebAuthenticationPresentationContextProviding {
+
+    /// True for the INITIATION legs only — /auth/google|apple|facebook.
+    /// Callbacks and /auth/app-session are never intercepted.
+    private func isAuthInitiation(_ url: URL) -> Bool {
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+        return comps.path == "/auth/google" || comps.path == "/auth/apple" || comps.path == "/auth/facebook"
+    }
+
+    private func startAppAuthSession(startingAt url: URL) {
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        let nonce = UUID().uuidString
+        var items = comps.queryItems ?? []
+        items.removeAll { $0.name == "app" || $0.name == "n" }
+        items.append(URLQueryItem(name: "app", value: "ios"))
+        items.append(URLQueryItem(name: "n", value: nonce))
+        comps.queryItems = items
+        guard let startURL = comps.url else { return }
+
+        let session = ASWebAuthenticationSession(
+            url: startURL,
+            callbackURLScheme: AppConfig.authCallbackScheme
+        ) { [weak self] callbackURL, error in
+            self?.authSession = nil
+            guard let callbackURL = callbackURL, error == nil else { return } // dismissed — stay put
+            self?.completeAppAuth(callbackURL: callbackURL, nonce: nonce, origin: url)
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        authSession = session
+        session.start()
+    }
+
+    /// streetfoodos://auth?t=<token> → open /auth/app-session in the webview.
+    private func completeAppAuth(callbackURL: URL, nonce: String, origin: URL) {
+        guard let comps = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+              let token = comps.queryItems?.first(where: { $0.name == "t" })?.value,
+              !token.isEmpty else { return }
+        var target = URLComponents()
+        target.scheme = origin.scheme
+        target.host = origin.host
+        target.port = origin.port
+        target.path = "/auth/app-session"
+        target.queryItems = [
+            URLQueryItem(name: "t", value: token),
+            URLQueryItem(name: "n", value: nonce)
+        ]
+        if let targetURL = target.url {
+            webView.load(URLRequest(url: targetURL))
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        view.window ?? ASPresentationAnchor()
     }
 }
 

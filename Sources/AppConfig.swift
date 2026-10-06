@@ -22,6 +22,11 @@ enum AppConfig {
         return defaultURL
     }
 
+    /// URL scheme registered by the app shell for auth callbacks (Info.plist
+    /// CFBundleURLTypes) — the server returns sign-ins here, never to
+    /// arbitrary URLs.
+    static let authCallbackScheme = "streetfoodos"
+
     /// Hosts that stay inside the app; anything else opens in the system browser.
     static func isAppHost(_ host: String) -> Bool {
         host == "app.streetfoodos.com"
