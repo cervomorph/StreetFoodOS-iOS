@@ -15,6 +15,8 @@ final class WebViewController: UIViewController {
     private var cacheClearedForFailure = false
     private var hasStartedInitialLoad = false
     private var didRunCacheSelfTest = false
+    private let statusLabel = UILabel()
+    private var lastCacheError = "none"
     private let loadingOverlay = UIView()
     private let spinner = UIActivityIndicatorView(style: .large)
     fileprivate static let cacheTypes: Set<String> = [
@@ -56,6 +58,9 @@ final class WebViewController: UIViewController {
         // navigation (WebKitErrorDomain 300) and left a blank page.
 
         makeLoadingOverlay()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBackground),
@@ -106,6 +111,8 @@ final class WebViewController: UIViewController {
         present(lock, animated: false)
     }
 
+    @objc private func appDidBecomeActive() { refreshCacheStatus() }
+
     @objc private func appDidBackground() {
         backgroundedAt = Date()
     }
@@ -147,6 +154,7 @@ extension WebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         setLoading(false)
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
+        refreshCacheStatus()
         cacheCurrentPage()
         // P0 bridge self-test — proves the native round-trip on every load
         // (visible via Safari's Web Inspector on a real device).
@@ -221,7 +229,9 @@ extension WebViewController: WKNavigationDelegate {
                     try PageCache.shared.save(path: path, html: html)
                     NSLog("SFOS_CACHE saved %@ (%d bytes), total=%d", path, html.count, PageCache.shared.stats().pages)
                 } catch {
+                    self.lastCacheError = String(describing: error)
                     NSLog("SFOS_CACHE save FAILED %@: %@", path, String(describing: error))
+                    DispatchQueue.main.async { self.refreshCacheStatus() }
                 }
             }
         }
@@ -350,6 +360,26 @@ extension WebViewController: WKNavigationDelegate {
             label.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
         ])
         spinner.startAnimating()
+
+        // Ground-truth status line (temporary, P3 debugging): shows whether the
+        // cache is unlocked and how many pages it holds, on the device itself.
+        statusLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        statusLabel.textColor = UIColor(white: 1, alpha: 0.55)
+        statusLabel.numberOfLines = 2
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(statusLabel)
+        NSLayoutConstraint.activate([
+            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            statusLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
+        ])
+    }
+
+    private func refreshCacheStatus() {
+        let cache = PageCache.shared
+        let stats = cache.stats()
+        statusLabel.text = "cache: \(cache.isUnlocked ? "unlocked" : "LOCKED") · pages=\(stats.pages) · pin=\(AppLock.shared.hasPin ? "yes" : "no") · err=\(lastCacheError)"
+        view.bringSubviewToFront(statusLabel)
     }
 
     private func setLoading(_ loading: Bool) {
