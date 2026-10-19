@@ -12,6 +12,12 @@ final class WebViewController: UIViewController {
     private var backgroundedAt: Date?
     private var didRecoverFromCrash = false
     private var didRetryInitialLoad = false
+    private var cacheClearedForFailure = false
+    fileprivate static let cacheTypes: Set<String> = [
+        WKWebsiteDataTypeDiskCache,
+        WKWebsiteDataTypeMemoryCache,
+        WKWebsiteDataTypeOfflineWebApplicationCache,
+    ]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -219,13 +225,6 @@ extension WebViewController: WKNavigationDelegate {
     /// WebKitErrorDomain 300 until the website data was cleared. Clear the
     /// CACHE (never cookies/localStorage, so the session survives) once per
     /// build, and again if a navigation fails.
-    private var cacheClearedForFailure = false
-    private static let cacheTypes: Set<String> = [
-        WKWebsiteDataTypeDiskCache,
-        WKWebsiteDataTypeMemoryCache,
-        WKWebsiteDataTypeOfflineWebApplicationCache,
-    ]
-
     private func clearWebCache(_ done: @escaping () -> Void) {
         WKWebsiteDataStore.default().removeData(ofTypes: Self.cacheTypes, modifiedSince: .distantPast) {
             DispatchQueue.main.async { done() }
