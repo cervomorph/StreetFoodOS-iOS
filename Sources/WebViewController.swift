@@ -161,6 +161,14 @@ final class WebViewController: UIViewController {
 
 extension WebViewController: WKNavigationDelegate {
 
+    /// Content has started arriving: the page is about to paint, so drop the
+    /// overlay now. didFinish waits for every subresource and was holding the
+    /// spinner for ~14s after the page was already visible.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        mark("commit")
+        setLoading(false)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
         setLoading(false)
