@@ -37,7 +37,7 @@ final class WebViewController: UIViewController {
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        webView.load(URLRequest(url: AppConfig.launchURL))
+        loadClearingStaleCacheIfUpgraded()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBackground),
@@ -214,6 +214,38 @@ extension WebViewController: WKNavigationDelegate {
         present(alert, animated: true)
     }
 
+    /// WebKit can wedge on a stale cached response — after the caching
+    /// changes shipped, an upgraded build showed a blank page with
+    /// WebKitErrorDomain 300 until the website data was cleared. Clear the
+    /// CACHE (never cookies/localStorage, so the session survives) once per
+    /// build, and again if a navigation fails.
+    private var cacheClearedForFailure = false
+    private static let cacheTypes: Set<String> = [
+        WKWebsiteDataTypeDiskCache,
+        WKWebsiteDataTypeMemoryCache,
+        WKWebsiteDataTypeOfflineWebApplicationCache,
+    ]
+
+    private func clearWebCache(_ done: @escaping () -> Void) {
+        WKWebsiteDataStore.default().removeData(ofTypes: Self.cacheTypes, modifiedSince: .distantPast) {
+            DispatchQueue.main.async { done() }
+        }
+    }
+
+    private func loadClearingStaleCacheIfUpgraded() {
+        let key = "sfos.lastLoadedBuild"
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"
+        let last = UserDefaults.standard.string(forKey: key)
+        UserDefaults.standard.set(build, forKey: key)
+        if last == build {
+            webView.load(URLRequest(url: AppConfig.launchURL))
+            return
+        }
+        clearWebCache { [weak self] in
+            self?.webView.load(URLRequest(url: AppConfig.launchURL))
+        }
+    }
+
     private func presentDiagnostics(error: Error, ns: NSError) {
         let target = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url ?? AppConfig.launchURL
         let panel = DiagnosticViewController(
@@ -252,6 +284,13 @@ extension WebViewController: WKNavigationDelegate {
         // webView.url is still the page we were already showing.
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
         if let path = failing?.path, serveCachedPage(webView, path: path) { return }
+        if !cacheClearedForFailure {
+            cacheClearedForFailure = true
+            clearWebCache { [weak self] in
+                self?.webView.load(URLRequest(url: AppConfig.launchURL))
+            }
+            return
+        }
         let target = failing ?? AppConfig.launchURL
         let report = "\(ns.domain) \(ns.code) — \(error.localizedDescription)"
         let panel = DiagnosticViewController(
