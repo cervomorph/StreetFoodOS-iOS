@@ -17,6 +17,7 @@ final class WebViewController: UIViewController {
         WKWebsiteDataTypeDiskCache,
         WKWebsiteDataTypeMemoryCache,
         WKWebsiteDataTypeOfflineWebApplicationCache,
+        WKWebsiteDataTypeServiceWorkerRegistrations,
     ]
 
     override func viewDidLoad() {
@@ -242,6 +243,7 @@ extension WebViewController: WKNavigationDelegate {
         }
         clearWebCache { [weak self] in
             self?.webView.load(URLRequest(url: AppConfig.launchURL))
+            self?.webView.evaluateJavaScript("navigator.serviceWorker && navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});", completionHandler: nil)
         }
     }
 
