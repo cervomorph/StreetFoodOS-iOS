@@ -22,6 +22,10 @@ enum AppConfig {
         return defaultURL
     }
 
+    /// Simulator/CI only: skip the PIN lock so automated runs can reach the
+    /// web view. Never used by a shipped build.
+    static var skipLock: Bool { ProcessInfo.processInfo.arguments.contains("-SFOSSkipLock") }
+
     /// URL scheme registered by the app shell for auth callbacks (Info.plist
     /// CFBundleURLTypes) — the server returns sign-ins here, never to
     /// arbitrary URLs.

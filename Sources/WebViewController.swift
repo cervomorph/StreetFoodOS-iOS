@@ -81,6 +81,11 @@ final class WebViewController: UIViewController {
     /// Setup on first run, unlock afterwards. No lock at all would leave the
     /// encrypted cache readable by anyone holding the device.
     private func presentLockIfNeeded() {
+        if AppConfig.skipLock {
+            try? PageCache.shared.unlockWithKeychain()
+            NSLog("SFOS_LOCK skipped (debug flag), cache unlocked=%d", PageCache.shared.isUnlocked ? 1 : 0)
+            return
+        }
         guard presentedViewController == nil else { return }
         let mode: LockViewController.Mode = AppLock.shared.hasPin ? .unlock : .setup
         if mode == .unlock && PageCache.shared.isUnlocked { return }
@@ -196,12 +201,21 @@ extension WebViewController: WKNavigationDelegate {
             PageCache.shared.wipe()
             return
         }
-        guard PageCache.isCacheable(path) else { return }
-        guard PageCache.shared.isUnlocked else { return }
-        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
-            guard let html = result as? String, html.count > 200 else { return }
+        guard PageCache.isCacheable(path) else { NSLog("SFOS_CACHE skip %@ (not cacheable)", path); return }
+        guard PageCache.shared.isUnlocked else { NSLog("SFOS_CACHE skip %@ (locked)", path); return }
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
+            if let error { NSLog("SFOS_CACHE JS error for %@: %@", path, String(describing: error)) }
+            guard let html = result as? String, html.count > 200 else {
+                NSLog("SFOS_CACHE skip %@ (html type=%@ len=%d)", path, String(describing: type(of: result)), (result as? String)?.count ?? -1)
+                return
+            }
             DispatchQueue.global(qos: .utility).async {
-                try? PageCache.shared.save(path: path, html: html)
+                do {
+                    try PageCache.shared.save(path: path, html: html)
+                    NSLog("SFOS_CACHE saved %@ (%d bytes), total=%d", path, html.count, PageCache.shared.stats().pages)
+                } catch {
+                    NSLog("SFOS_CACHE save FAILED %@: %@", path, String(describing: error))
+                }
             }
         }
     }

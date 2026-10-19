@@ -1,0 +1,64 @@
+name: Sim check
+
+# Simulator loop (2026-10-19, Kit): builds, boots an iPad simulator, launches
+# the shell with -SFOSSkipLock, screenshots it and captures the app log — so a
+# UI/cache bug is diagnosable in minutes instead of a TestFlight round-trip.
+on:
+  workflow_dispatch:
+    inputs:
+      wait_seconds:
+        description: 'Seconds to let the app run before the screenshot'
+        required: false
+        default: '45'
+
+jobs:
+  sim:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build for the simulator
+        run: |
+          set -euo pipefail
+          xcodebuild build -project StreetFoodOS.xcodeproj -scheme StreetFoodOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO -derivedDataPath build | tail -5
+      - name: Boot, install, launch, capture
+        run: |
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPad' in x['name']]
+          print(c[0] if c else '')")
+          if [ -z "$DEVICE" ]; then echo "no iPad simulator"; xcrun simctl list devices available | head -30; exit 1; fi
+          echo "device=$DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          APP=$(find build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' | head -1)
+          echo "app=$APP"
+          xcrun simctl install "$DEVICE" "$APP"
+          (xcrun simctl spawn "$DEVICE" log stream --style compact --predicate 'processImagePath CONTAINS "StreetFoodOS"' > /tmp/app.log 2>&1 &) || true
+          xcrun simctl launch "$DEVICE" com.cervomorph.streetfoodos -SFOSSkipLock 1 || true
+          sleep "${{ github.event.inputs.wait_seconds }}"
+          xcrun simctl io "$DEVICE" screenshot /tmp/shot.png || true
+          sleep 2
+      - name: Show the app log
+        if: always()
+        run: |
+          echo "=== SFOS log lines ==="
+          grep -E "SFOS_LOCK|SFOS_CACHE" /tmp/app.log | tail -40 || true
+          echo "=== last 40 lines ==="
+          tail -40 /tmp/app.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim-output
+          path: |
+            /tmp/shot.png
+            /tmp/app.log
