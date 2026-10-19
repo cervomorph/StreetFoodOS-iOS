@@ -64,6 +64,16 @@ let probeSalt = Data(repeating: 1, count: 16)
 let kA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: probeSalt).withUnsafeBytes { Data($0) }
 let kB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: probeSalt).withUnsafeBytes { Data($0) }
 check("PBKDF2 differs across passwords", kA != kB, "A=\(kA.base64EncodedString()) B=\(kB.base64EncodedString())")
+// Where exactly does the wrong password slip through?
+let saltW = Data(base64Encoded: wrapped.salt)!
+let rawA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: saltW, iterations: wrapped.iters).withUnsafeBytes { Data($0) }
+let rawB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: saltW, iterations: wrapped.iters).withUnsafeBytes { Data($0) }
+check("wrap-salt KEKs differ", rawA != rawB, "A=\(rawA.base64EncodedString()) B=\(rawB.base64EncodedString())")
+let manual = try CacheCrypto.seal(Data("manual probe".utf8), key: rawA)
+expectThrow("manual wrong-KEK open refused") { try CacheCrypto.open(manual, key: rawB) }
+var saltFlipped = wrapped
+if var s = Data(base64Encoded: saltFlipped.salt) { s[0] ^= 0xFF; saltFlipped.salt = s.base64EncodedString() }
+expectThrow("salt-flipped wrap refused") { try CacheCrypto.unwrap(saltFlipped, secret: "EmberOak26") }
 do {
     let bad = try CacheCrypto.unwrap(wrapped, secret: "wrong-password")
     failures += 1
