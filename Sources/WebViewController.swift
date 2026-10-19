@@ -123,6 +123,7 @@ final class WebViewController: UIViewController {
             }
         }
         mark("lockShown")
+        warmConnection()
         present(lock, animated: false)
     }
 
@@ -138,6 +139,18 @@ final class WebViewController: UIViewController {
         guard Date().timeIntervalSince(at) >= AppLock.backgroundLockAfter else { return }
         AppLock.shared.lock()
         DispatchQueue.main.async { [weak self] in self?.presentLockIfNeeded() }
+    }
+
+    /// Wake DNS/TLS while the user types the PIN — the first navigation was
+    /// waiting ~14s for a cold connection.
+    private func warmConnection() {
+        var request = URLRequest(url: AppConfig.launchURL)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            NSLog("SFOS_WARM connection warmed")
+        }.resume()
     }
 
     private func makeWebView() -> WKWebView {
@@ -176,6 +189,22 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
+        webView.evaluateJavaScript("""
+        (function () {
+          try {
+            var n = performance.getEntriesByType('navigation')[0];
+            if (!n) { return 'no-nav-timing'; }
+            return 'ttfb=' + Math.round(n.responseStart - n.requestStart) +
+                   'ms dns=' + Math.round(n.domainLookupEnd - n.domainLookupStart) +
+                   'ms tls=' + Math.round(n.connectEnd - n.connectStart) +
+                   'ms total=' + Math.round(n.duration) + 'ms';
+          } catch (e) { return 'timing-error'; }
+        })();
+        """) { [weak self] result, _ in
+            guard let self, let text = result as? String else { return }
+            self.mark(text.replacingOccurrences(of: " ", with: " "))
+            self.refreshCacheStatus()
+        }
         setLoading(false)
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
         refreshCacheStatus()
