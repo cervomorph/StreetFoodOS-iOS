@@ -17,6 +17,13 @@ final class WebViewController: UIViewController {
     private var didRunCacheSelfTest = false
     private let statusLabel = UILabel()
     private var lastCacheError = "none"
+    private let launchStart = Date()
+    private var timeline: [String] = []
+
+    private func mark(_ label: String) {
+        timeline.append(String(format: "%@=%.1fs", label, Date().timeIntervalSince(launchStart)))
+        if timeline.count > 6 { timeline.removeFirst() }
+    }
     private let loadingOverlay = UIView()
     private let spinner = UIActivityIndicatorView(style: .large)
     fileprivate static let cacheTypes: Set<String> = [
@@ -103,11 +110,14 @@ final class WebViewController: UIViewController {
         if mode == .unlock && PageCache.shared.isUnlocked { return }
         let lock = LockViewController(mode: mode) { [weak self] in
             guard let self else { return }
+            self.mark("unlocked")
             self.dismiss(animated: true) {
                 self.hasStartedInitialLoad = true
+                self.mark("loadStart")
                 self.webView.load(URLRequest(url: AppConfig.launchURL))
             }
         }
+        mark("lockShown")
         present(lock, animated: false)
     }
 
@@ -152,6 +162,7 @@ final class WebViewController: UIViewController {
 extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        mark("loaded")
         setLoading(false)
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
         refreshCacheStatus()
@@ -366,6 +377,7 @@ extension WebViewController: WKNavigationDelegate {
             label.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
         ])
         spinner.startAnimating()
+        mark("ui")
 
         // Ground-truth status line (temporary, P3 debugging): shows whether the
         // cache is unlocked and how many pages it holds, on the device itself.
@@ -384,7 +396,8 @@ extension WebViewController: WKNavigationDelegate {
     private func refreshCacheStatus() {
         let cache = PageCache.shared
         let stats = cache.stats()
-        statusLabel.text = "cache: \(cache.isUnlocked ? "unlocked" : "LOCKED") · pages=\(stats.pages) · pin=\(AppLock.shared.hasPin ? "yes" : "no") · err=\(lastCacheError)"
+        let time = timeline.isEmpty ? "" : "\n" + timeline.joined(separator: " ")
+        statusLabel.text = "cache: \(cache.isUnlocked ? "unlocked" : "LOCKED") · pages=\(stats.pages) · pin=\(AppLock.shared.hasPin ? "yes" : "no") · err=\(lastCacheError)" + time
         view.bringSubviewToFront(statusLabel)
     }
 
