@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/sccheck
           cp Support/CryptoSelfCheck.swift /tmp/sccheck/main.swift
-          swiftc -O -o /tmp/sfos-crypto-check /tmp/sccheck/main.swift Sources/Offline/CacheCrypto.swift
+          swiftc -O -o /tmp/sfos-crypto-check /tmp/sccheck/main.swift Sources/Offline/CacheCrypto.swift Sources/Offline/KeyStore.swift Sources/Offline/PageCache.swift
           /tmp/sfos-crypto-check
 
       - name: Install XcodeGen

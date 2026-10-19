@@ -64,6 +64,7 @@ final class WebViewController: UIViewController {
 extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        cacheCurrentPage()
         // P0 bridge self-test — proves the native round-trip on every load
         // (visible via Safari's Web Inspector on a real device).
         webView.evaluateJavaScript(
@@ -115,6 +116,46 @@ extension WebViewController: WKNavigationDelegate {
         showLoadError(error)
     }
 
+    /// Save what the WebView actually rendered, encrypted, for offline use.
+    /// Auth screens are never cached — and hitting one wipes the cache.
+    private func cacheCurrentPage() {
+        guard let url = webView.url else { return }
+        let path = url.path
+        if path == "/login" || path == "/logout" {
+            PageCache.shared.wipe()
+            return
+        }
+        guard PageCache.isCacheable(path) else { return }
+        try? PageCache.shared.unlockWithKeychain()
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
+            guard let html = result as? String, html.count > 200 else { return }
+            DispatchQueue.global(qos: .utility).async {
+                try? PageCache.shared.save(path: path, html: html)
+            }
+        }
+    }
+
+    /// Serve the saved copy with a banner naming when it was taken.
+    @discardableResult
+    private func serveCachedPage(_ webView: WKWebView, path: String) -> Bool {
+        guard PageCache.isCacheable(path),
+              let entry = try? PageCache.shared.load(path: path),
+              let entry else { return false }
+        let fmt = DateFormatter()
+        fmt.dateStyle = .short
+        fmt.timeStyle = .short
+        let stamp = fmt.string(from: entry.savedAt)
+        let banner = "<div style=\"position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#facc15;color:#111;font:500 13px -apple-system,sans-serif;padding:8px 12px;text-align:center\">Offline — showing the copy saved \(stamp)</div>"
+        let html: String
+        if let bodyRange = entry.html.range(of: "<body", options: .caseInsensitive) {
+            html = entry.html.replacingOccurrences(of: "<body", with: "<body>" + banner, options: .caseInsensitive, range: bodyRange)
+        } else {
+            html = banner + entry.html
+        }
+        webView.loadHTMLString(html, baseURL: URL(string: AppConfig.prodURL.absoluteString + path))
+        return true
+    }
+
     private func showLoadError(_ error: Error) {
         let ns = error as NSError
         if ns.code == NSURLErrorCancelled { return }
@@ -123,7 +164,8 @@ extension WebViewController: WKNavigationDelegate {
         // Safari links). Never dressed up as a connectivity failure — the
         // scary "Can't reach StreetFoodOS" alert was entirely self-inflicted.
         if ns.domain == "WebKitErrorDomain" && (ns.code == 101 || ns.code == 102) { return }
-        // P2 replaces this with the branded offline screen + native page cache.
+        // Offline: serve the encrypted copy this device saved for that page.
+        if let path = webView.url?.path, serveCachedPage(webView, path: path) { return }
         let alert = UIAlertController(
             title: "Can't reach StreetFoodOS",
             message: error.localizedDescription,

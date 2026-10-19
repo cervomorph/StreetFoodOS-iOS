@@ -101,6 +101,33 @@ let big = String(repeating: "<div>menu item £3.50</div>", count: 4000)
 let bigSealed = try CacheCrypto.sealText(big, key: keyA)
 check("4000-node page round-trips", try CacheCrypto.openText(bigSealed, key: keyA) == big)
 
+// 9. PageCache — encrypted at rest, auth paths refused, wipe, lock
+let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("sfos-pc-\(UUID().uuidString)")
+let pc = PageCache(directory: tmpDir)
+try pc.unlock(withDeviceKey: CacheCrypto.makeDeviceKey())
+check("auth and api paths are never cacheable", !PageCache.isCacheable("/login") && !PageCache.isCacheable("/auth/google?x=1") && !PageCache.isCacheable("/api/menu"))
+check("app pages are cacheable", PageCache.isCacheable("/terminal") && PageCache.isCacheable("/log-books"))
+try pc.save(path: "/log-books", html: "<html><body>LOGBOOK-SECRET-CONTENT</body></html>")
+let loaded = try pc.load(path: "/log-books")
+check("page round-trips through the cache", loaded?.html.contains("LOGBOOK-SECRET-CONTENT") == true)
+let files = (try? FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil)) ?? []
+if let f = files.first, let raw = try? Data(contentsOf: f) {
+    let text = String(data: raw, encoding: .utf8) ?? ""
+    check("stored file is ciphertext", !text.contains("LOGBOOK") && text.contains("\"ct\""))
+} else {
+    check("stored file is ciphertext", false, "no file written")
+}
+pc.lock()
+do {
+    _ = try pc.load(path: "/log-books")
+    check("locked cache refuses reads", false)
+} catch { check("locked cache refuses reads", true) }
+try pc.unlock(withDeviceKey: CacheCrypto.makeDeviceKey())
+let stillThere = try? pc.load(path: "/log-books")
+check("wrong key yields no readable page", stillThere == nil)
+pc.wipe()
+check("wipe removes every cached file", pc.stats().pages == 0)
+
 print("")
 if failures == 0 {
     print("crypto self-check: ALL PASS")
