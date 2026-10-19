@@ -38,7 +38,7 @@ enum KeyStore {
     }
 
     static func save(_ data: Data, item: Item, account: String? = nil) throws {
-        var q = query(item, account: account)
+        let q = query(item, account: account)
         let attrs: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
@@ -55,7 +55,7 @@ enum KeyStore {
     }
 
     static func load(item: Item, account: String? = nil) throws -> Data? {
-        var q = query(item, account: account)
+        let q = query(item, account: account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
