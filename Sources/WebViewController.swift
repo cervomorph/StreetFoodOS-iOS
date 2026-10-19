@@ -296,14 +296,15 @@ extension WebViewController: WKNavigationDelegate {
         let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"
         let last = UserDefaults.standard.string(forKey: key)
         UserDefaults.standard.set(build, forKey: key)
-        if last == build {
-            webView.load(URLRequest(url: AppConfig.launchURL))
-            return
-        }
-        clearWebCache { [weak self] in
-            self?.webView.load(URLRequest(url: AppConfig.launchURL))
-            self?.webView.evaluateJavaScript("navigator.serviceWorker && navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});", completionHandler: nil)
-        }
+        // Load IMMEDIATELY. WebKit's removeData() takes 10-15s on a populated
+        // store, and every new build number counted as an "upgrade", so the
+        // purge gated the first load on every install.
+        setLoading(true)
+        webView.load(URLRequest(url: AppConfig.launchURL))
+        guard last != build else { return }
+        // Cheap migration for older builds: drop any service-worker
+        // registration left behind (a stuck SW was wedging navigation).
+        webView.evaluateJavaScript("navigator.serviceWorker && navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});", completionHandler: nil)
     }
 
     /// A branded loading state — the bare web view showed a white canvas for
