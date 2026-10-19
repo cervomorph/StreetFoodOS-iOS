@@ -82,7 +82,14 @@ final class WebViewController: UIViewController {
     /// encrypted cache readable by anyone holding the device.
     private func presentLockIfNeeded() {
         if AppConfig.skipLock {
-            try? PageCache.shared.unlockWithKeychain()
+            do {
+                try PageCache.shared.unlockWithKeychain()
+            } catch {
+                NSLog("SFOS_LOCK keychain unlock failed: %@", String(describing: error))
+                let ephemeral = CacheCrypto.makeDeviceKey()
+                try? PageCache.shared.unlock(withDeviceKey: ephemeral)
+                NSLog("SFOS_LOCK falling back to an in-memory key")
+            }
             NSLog("SFOS_LOCK skipped (debug flag), cache unlocked=%d", PageCache.shared.isUnlocked ? 1 : 0)
             return
         }
