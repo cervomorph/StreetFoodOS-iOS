@@ -9,6 +9,7 @@ final class WebViewController: UIViewController {
     private var webView: WKWebView!
     /// Kept alive while the system sign-in sheet is up — releasing it cancels the session.
     private var authSession: ASWebAuthenticationSession?
+    private var backgroundedAt: Date?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -35,6 +36,44 @@ final class WebViewController: UIViewController {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.load(URLRequest(url: AppConfig.launchURL))
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        presentLockIfNeeded()
+    }
+
+    /// Setup on first run, unlock afterwards. No lock at all would leave the
+    /// encrypted cache readable by anyone holding the device.
+    private func presentLockIfNeeded() {
+        guard presentedViewController == nil else { return }
+        let mode: LockViewController.Mode = AppLock.shared.hasPin ? .unlock : .setup
+        if mode == .unlock && PageCache.shared.isUnlocked { return }
+        let lock = LockViewController(mode: mode) { [weak self] in
+            self?.dismiss(animated: true) {
+                self?.webView.reload()
+            }
+        }
+        present(lock, animated: false)
+    }
+
+    @objc private func appDidBackground() {
+        backgroundedAt = Date()
+    }
+
+    @objc private func appWillForeground() {
+        defer { backgroundedAt = nil }
+        guard AppLock.shared.hasPin, let at = backgroundedAt else { return }
+        guard Date().timeIntervalSince(at) >= AppLock.backgroundLockAfter else { return }
+        AppLock.shared.lock()
+        DispatchQueue.main.async { [weak self] in self?.presentLockIfNeeded() }
     }
 
     private func makeWebView() -> WKWebView {
@@ -126,7 +165,7 @@ extension WebViewController: WKNavigationDelegate {
             return
         }
         guard PageCache.isCacheable(path) else { return }
-        try? PageCache.shared.unlockWithKeychain()
+        guard PageCache.shared.isUnlocked else { return }
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
             guard let html = result as? String, html.count > 200 else { return }
             DispatchQueue.global(qos: .utility).async {
