@@ -214,6 +214,17 @@ extension WebViewController: WKNavigationDelegate {
         present(alert, animated: true)
     }
 
+    private func presentDiagnostics(error: Error, ns: NSError) {
+        let target = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url ?? AppConfig.launchURL
+        let panel = DiagnosticViewController(
+            url: target,
+            webKitError: "\(ns.domain) \(ns.code) — \(error.localizedDescription)",
+            onRetry: { [weak self] in self?.webView.load(URLRequest(url: target)) },
+            onReset: { [weak self] in self?.webView.load(URLRequest(url: AppConfig.launchURL)) }
+        )
+        present(panel, animated: false)
+    }
+
     private func showLoadError(_ error: Error) {
         let ns = error as NSError
         if ns.code == NSURLErrorCancelled { return }
@@ -231,6 +242,9 @@ extension WebViewController: WKNavigationDelegate {
                 didRetryInitialLoad = true
                 webView.load(URLRequest(url: AppConfig.launchURL))
             }
+            if !didRetryInitialLoad {
+                presentDiagnostics(error: error, ns: ns)
+            }
             return
         }
         // Offline: serve the encrypted copy this device saved for that page.
@@ -238,19 +252,15 @@ extension WebViewController: WKNavigationDelegate {
         // webView.url is still the page we were already showing.
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
         if let path = failing?.path, serveCachedPage(webView, path: path) { return }
-        let stats = PageCache.shared.stats()
-        let detail = "\(error.localizedDescription) [\(ns.domain) \(ns.code)]\n\nOffline cache: \(stats.pages) page(s), "
-            + (PageCache.shared.isUnlocked ? "unlocked" : "locked")
-            + ", path: \(failing?.path ?? "unknown")"
-        let alert = UIAlertController(
-            title: "Can't reach StreetFoodOS",
-            message: detail,
-            preferredStyle: .alert
+        let target = failing ?? AppConfig.launchURL
+        let report = "\(ns.domain) \(ns.code) — \(error.localizedDescription)"
+        let panel = DiagnosticViewController(
+            url: target,
+            webKitError: report,
+            onRetry: { [weak self] in self?.webView.load(URLRequest(url: target)) },
+            onReset: { [weak self] in self?.webView.load(URLRequest(url: AppConfig.launchURL)) }
         )
-        alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
-            self?.webView.reload()
-        })
-        present(alert, animated: true)
+        present(panel, animated: false)
     }
 }
 
