@@ -59,7 +59,18 @@ check("wrap records 100k iterations", wrapped.iters == 100_000, "\(wrapped.iters
 check("wrap salt is 16 bytes", Data(base64Encoded: wrapped.salt)?.count == 16)
 let unwrapped = try CacheCrypto.unwrap(wrapped, secret: "EmberOak26")
 check("wrap/unwrap restores the device key", unwrapped == keyA)
-expectThrow("wrong password cannot unwrap") { try CacheCrypto.unwrap(wrapped, secret: "wrong-password") }
+// Diagnostics for the wrong-password case: is PBKDF2 actually keyed by the secret?
+let probeSalt = Data(repeating: 1, count: 16)
+let kA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: probeSalt).withUnsafeBytes { Data($0) }
+let kB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: probeSalt).withUnsafeBytes { Data($0) }
+check("PBKDF2 differs across passwords", kA != kB, "A=\(kA.base64EncodedString()) B=\(kB.base64EncodedString())")
+do {
+    let bad = try CacheCrypto.unwrap(wrapped, secret: "wrong-password")
+    failures += 1
+    print("FAIL  wrong password cannot unwrap  :: returned \(bad.count) bytes: \(bad.base64EncodedString()) (correct: \(keyA.base64EncodedString()))")
+} catch {
+    print("PASS  wrong password cannot unwrap  :: threw \(error)")
+}
 let wrappedPin = try CacheCrypto.wrap(deviceKey: keyA, secret: "2468")
 let unwrappedPin = try CacheCrypto.unwrap(wrappedPin, secret: "2468")
 check("short PIN wraps work too", unwrappedPin == keyA)
