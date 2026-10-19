@@ -178,6 +178,14 @@ final class WebViewController: UIViewController {
         // also inset the page itself; that double-count made every 100vh page
         // taller than its visible area.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Boot WebKit's content process NOW (behind the lock screen). The first
+        // real navigation was waiting ~14s between the provisional load and
+        // commit, while the same URL answered in 41ms — that is process
+        // start-up, not network. A throwaway local page pays the cost early.
+        webView.loadHTMLString(
+            "<html><body style=\"margin:0;background:#11161d\"></body></html>",
+            baseURL: nil
+        )
         return webView
     }
 }
@@ -275,7 +283,7 @@ extension WebViewController: WKNavigationDelegate {
     /// Save what the WebView actually rendered, encrypted, for offline use.
     /// Auth screens are never cached — and hitting one wipes the cache.
     private func cacheCurrentPage() {
-        guard let url = webView.url else { return }
+        guard let url = webView.url, let scheme = url.scheme, scheme == "http" || scheme == "https" else { return }
         let path = url.path
         // Only a deliberate sign-out wipes. Rendering /login must NOT drop the
         // device key: a fresh install (or any expired session) lands on /login
