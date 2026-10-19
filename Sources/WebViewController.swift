@@ -212,10 +212,15 @@ extension WebViewController: WKNavigationDelegate {
     private func cacheCurrentPage() {
         guard let url = webView.url else { return }
         let path = url.path
-        if path == "/login" || path == "/logout" {
+        // Only a deliberate sign-out wipes. Rendering /login must NOT drop the
+        // device key: a fresh install (or any expired session) lands on /login
+        // before the user signs in, and wiping there destroyed the key seconds
+        // after unlock, leaving the cache locked for the rest of the session.
+        if path == "/logout" {
             PageCache.shared.wipe()
             return
         }
+        if path == "/login" { return }
         guard PageCache.isCacheable(path) else { NSLog("SFOS_CACHE skip %@ (not cacheable)", path); return }
         guard PageCache.shared.isUnlocked else { NSLog("SFOS_CACHE skip %@ (locked)", path); return }
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
