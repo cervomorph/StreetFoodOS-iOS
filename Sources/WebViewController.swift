@@ -14,6 +14,7 @@ final class WebViewController: UIViewController {
     private var didRetryInitialLoad = false
     private var cacheClearedForFailure = false
     private var hasStartedInitialLoad = false
+    private var didRunCacheSelfTest = false
     private let loadingOverlay = UIView()
     private let spinner = UIActivityIndicatorView(style: .large)
     fileprivate static let cacheTypes: Set<String> = [
@@ -133,6 +134,7 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         setLoading(false)
+        if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
         cacheCurrentPage()
         // P0 bridge self-test — proves the native round-trip on every load
         // (visible via Safari's Web Inspector on a real device).
@@ -270,6 +272,38 @@ extension WebViewController: WKNavigationDelegate {
 
     /// A branded loading state — the bare web view showed a white canvas for
     /// several seconds on first load after an upgrade.
+    /// Write-and-read a probe entry so a broken cache is visible immediately
+    /// instead of only as "0 screens saved" hours later.
+    private func runCacheSelfTest() {
+        let cache = PageCache.shared
+        let probe = "/__selftest"
+        do {
+            try cache.save(path: probe, html: "<html><body>selftest</body></html>")
+            let readBack = try cache.load(path: probe)
+            let ok = readBack?.html.contains("selftest") == true
+            cache.remove(path: probe)
+            if !ok { showCacheBanner("Offline cache self-test failed: write succeeded but read-back was empty") }
+        } catch {
+            showCacheBanner("Offline cache unavailable: \(error)")
+        }
+    }
+
+    private func showCacheBanner(_ text: String) {
+        let label = UILabel()
+        label.text = "  \(text)  "
+        label.numberOfLines = 0
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .white
+        label.backgroundColor = UIColor.systemRed.withAlphaComponent(0.85)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
     private func makeLoadingOverlay() {
         loadingOverlay.backgroundColor = UIColor(red: 0.067, green: 0.086, blue: 0.114, alpha: 1)
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
