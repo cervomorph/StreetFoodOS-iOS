@@ -13,6 +13,7 @@ final class WebViewController: UIViewController {
     private var didRecoverFromCrash = false
     private var didRetryInitialLoad = false
     private var cacheClearedForFailure = false
+    private var hasStartedInitialLoad = false
     fileprivate static let cacheTypes: Set<String> = [
         WKWebsiteDataTypeDiskCache,
         WKWebsiteDataTypeMemoryCache,
@@ -44,7 +45,9 @@ final class WebViewController: UIViewController {
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        loadClearingStaleCacheIfUpgraded()
+        // The load starts in viewDidAppear — AFTER the lock is dismissed.
+        // Loading under a full-screen lock presentation made WebKit abort the
+        // navigation (WebKitErrorDomain 300) and left a blank page.
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBackground),
@@ -57,6 +60,14 @@ final class WebViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         presentLockIfNeeded()
+        startInitialLoadIfNeeded()
+    }
+
+    /// First real load happens only when no lock is presented.
+    private func startInitialLoadIfNeeded() {
+        guard !hasStartedInitialLoad, presentedViewController == nil else { return }
+        hasStartedInitialLoad = true
+        loadClearingStaleCacheIfUpgraded()
     }
 
     /// Setup on first run, unlock afterwards. No lock at all would leave the
@@ -66,8 +77,10 @@ final class WebViewController: UIViewController {
         let mode: LockViewController.Mode = AppLock.shared.hasPin ? .unlock : .setup
         if mode == .unlock && PageCache.shared.isUnlocked { return }
         let lock = LockViewController(mode: mode) { [weak self] in
-            self?.dismiss(animated: true) {
-                self?.webView.reload()
+            guard let self else { return }
+            self.dismiss(animated: true) {
+                self.hasStartedInitialLoad = true
+                self.webView.load(URLRequest(url: AppConfig.launchURL))
             }
         }
         present(lock, animated: false)
