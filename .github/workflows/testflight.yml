@@ -1,9 +1,9 @@
 name: TestFlight
 
+# On demand only (2026-10-19, Kit): a TestFlight upload is a deliberate release
+# action. A tag push must never spend macOS minutes or push a build by itself.
 on:
   workflow_dispatch:
-  push:
-    tags: ['v*']
 
 concurrency:
   group: testflight

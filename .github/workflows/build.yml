@@ -1,8 +1,8 @@
 name: Build check
 
+# On demand only (2026-10-19, Kit): the compile + crypto self-check runs when
+# asked. macOS runners bill at 10x, so nothing fires automatically.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
