@@ -65,6 +65,11 @@ final class WebViewController: UIViewController {
         // navigation (WebKitErrorDomain 300) and left a blank page.
 
         makeLoadingOverlay()
+        // The count must be live: the sweep saves pages while the user sits on
+        // one screen, so a label drawn at didFinish never showed progress.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.refreshCacheStatus()
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
