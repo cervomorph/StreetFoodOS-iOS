@@ -302,6 +302,20 @@ extension WebViewController: WKNavigationDelegate {
         view.bringSubviewToFront(loadingOverlay)
     }
 
+    private func isOnline() -> Bool {
+        var reachable = false
+        let sem = DispatchSemaphore(value: 0)
+        var request = URLRequest(url: URL(string: "https://app.streetfoodos.com/health")!)
+        request.timeoutInterval = 3
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            reachable = (response as? HTTPURLResponse)?.statusCode == 200
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 4)
+        return reachable
+    }
+
     private func presentDiagnostics(error: Error, ns: NSError) {
         let target = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url ?? AppConfig.launchURL
         let panel = DiagnosticViewController(
@@ -340,6 +354,22 @@ extension WebViewController: WKNavigationDelegate {
         // webView.url is still the page we were already showing.
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
         if let path = failing?.path, serveCachedPage(webView, path: path) { return }
+        // Offline: the probe panel is meaningless. Say what we actually know.
+        let stats = PageCache.shared.stats()
+        if !isOnline() {
+            let alert = UIAlertController(
+                title: "You're offline",
+                message: "No saved copy of this screen.
+
+\(stats.pages) screen\(stats.pages == 1 ? "" : "s") saved on this device — open one of those, or reconnect.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+                self?.webView.load(URLRequest(url: AppConfig.launchURL))
+            })
+            present(alert, animated: true)
+            return
+        }
         if !cacheClearedForFailure {
             cacheClearedForFailure = true
             clearWebCache { [weak self] in
@@ -351,7 +381,7 @@ extension WebViewController: WKNavigationDelegate {
         let report = "\(ns.domain) \(ns.code) — \(error.localizedDescription)"
         let panel = DiagnosticViewController(
             url: target,
-            webKitError: report,
+            webKitError: report + "\nCache: \(PageCache.shared.stats().pages) page(s) saved",
             onRetry: { [weak self] in self?.webView.load(URLRequest(url: target)) },
             onReset: { [weak self] in self?.webView.load(URLRequest(url: AppConfig.launchURL)) }
         )
