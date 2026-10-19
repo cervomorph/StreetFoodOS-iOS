@@ -25,6 +25,14 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Crypto self-check (host, no simulator)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sccheck
+          cp Support/CryptoSelfCheck.swift /tmp/sccheck/main.swift
+          swiftc -O -o /tmp/sfos-crypto-check /tmp/sccheck/main.swift Sources/Offline/CacheCrypto.swift
+          /tmp/sfos-crypto-check
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
