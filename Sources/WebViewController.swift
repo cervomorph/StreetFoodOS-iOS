@@ -160,21 +160,6 @@ final class WebViewController: UIViewController {
         }.resume()
     }
 
-    /// Runs after the first page is up, never before a load. A wedged WebKit
-    /// disk cache showed up as a 14s stall before the first byte reached the
-    /// renderer; this clears it once per build without gating anything.
-    private func purgeWebCacheAfterLoad() {
-        let key = "sfos.purgedForBuild"
-        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "0"
-        guard UserDefaults.standard.string(forKey: key) != build else { return }
-        UserDefaults.standard.set(build, forKey: key)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-            WKWebsiteDataStore.default().removeData(ofTypes: Self.cacheTypes, modifiedSince: .distantPast) {
-                NSLog("SFOS_WARM webkit cache purged after load")
-            }
-        }
-    }
-
     private func makeWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
         // Persistent store — till logins must survive app restarts.
@@ -200,6 +185,10 @@ final class WebViewController: UIViewController {
 // MARK: - WKNavigationDelegate
 
 extension WebViewController: WKNavigationDelegate {
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        mark("prov")
+    }
 
     /// Content has started arriving: the page is about to paint, so drop the
     /// overlay now. didFinish waits for every subresource and was holding the
@@ -228,7 +217,7 @@ extension WebViewController: WKNavigationDelegate {
             self.refreshCacheStatus()
         }
         setLoading(false)
-        if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest(); purgeWebCacheAfterLoad() }
+        if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
         refreshCacheStatus()
         cacheCurrentPage()
         // P0 bridge self-test — proves the native round-trip on every load
@@ -248,6 +237,7 @@ extension WebViewController: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
+        if navigationAction.targetFrame?.isMainFrame == true { mark("policy") }
         // In-app sign-in (2026-10-07): start social sign-ins in the SYSTEM auth
         // session. Google blocks OAuth inside embedded webviews entirely, and
         // even where it didn't, the system browser's session cookies would
