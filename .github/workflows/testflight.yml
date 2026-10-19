@@ -60,7 +60,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGNING_ALLOWED=NO \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}"
+            CURRENT_PROJECT_VERSION="$(date -u +%Y%m%d%H%M)"
 
       - name: Export and upload to TestFlight
         run: |
