@@ -14,6 +14,8 @@ final class WebViewController: UIViewController {
     private var didRetryInitialLoad = false
     private var cacheClearedForFailure = false
     private var hasStartedInitialLoad = false
+    private let loadingOverlay = UIView()
+    private let spinner = UIActivityIndicatorView(style: .large)
     fileprivate static let cacheTypes: Set<String> = [
         WKWebsiteDataTypeDiskCache,
         WKWebsiteDataTypeMemoryCache,
@@ -30,6 +32,9 @@ final class WebViewController: UIViewController {
         bridge.attach(to: webView)
 
         webView.translatesAutoresizingMaskIntoConstraints = false
+        webView.isOpaque = false
+        webView.backgroundColor = UIColor(red: 0.067, green: 0.086, blue: 0.114, alpha: 1)
+        webView.scrollView.backgroundColor = webView.backgroundColor
         view.addSubview(webView)
         // Live INSIDE the safe area: the page viewport then equals the visible
         // screen exactly (no scroll range hiding under the notch / home bar,
@@ -48,6 +53,8 @@ final class WebViewController: UIViewController {
         // The load starts in viewDidAppear — AFTER the lock is dismissed.
         // Loading under a full-screen lock presentation made WebKit abort the
         // navigation (WebKitErrorDomain 300) and left a blank page.
+
+        makeLoadingOverlay()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBackground),
@@ -125,6 +132,7 @@ final class WebViewController: UIViewController {
 extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        setLoading(false)
         cacheCurrentPage()
         // P0 bridge self-test — proves the native round-trip on every load
         // (visible via Safari's Web Inspector on a real device).
@@ -258,6 +266,40 @@ extension WebViewController: WKNavigationDelegate {
             self?.webView.load(URLRequest(url: AppConfig.launchURL))
             self?.webView.evaluateJavaScript("navigator.serviceWorker && navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});", completionHandler: nil)
         }
+    }
+
+    /// A branded loading state — the bare web view showed a white canvas for
+    /// several seconds on first load after an upgrade.
+    private func makeLoadingOverlay() {
+        loadingOverlay.backgroundColor = UIColor(red: 0.067, green: 0.086, blue: 0.114, alpha: 1)
+        loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.text = "StreetFood OS"
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.font = UIFont(name: "AvenirNext-DemiBold", size: 15) ?? label.font
+        label.translatesAutoresizingMaskIntoConstraints = false
+        spinner.color = UIColor(white: 0.7, alpha: 1)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        loadingOverlay.addSubview(spinner)
+        loadingOverlay.addSubview(label)
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            spinner.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 14),
+            label.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
+        ])
+        spinner.startAnimating()
+    }
+
+    private func setLoading(_ loading: Bool) {
+        loadingOverlay.isHidden = !loading
+        view.bringSubviewToFront(loadingOverlay)
     }
 
     private func presentDiagnostics(error: Error, ns: NSError) {
