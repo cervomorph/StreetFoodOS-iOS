@@ -204,10 +204,17 @@ extension WebViewController: WKNavigationDelegate {
         // scary "Can't reach StreetFoodOS" alert was entirely self-inflicted.
         if ns.domain == "WebKitErrorDomain" && (ns.code == 101 || ns.code == 102) { return }
         // Offline: serve the encrypted copy this device saved for that page.
-        if let path = webView.url?.path, serveCachedPage(webView, path: path) { return }
+        // The failing URL comes from the error — on a provisional failure
+        // webView.url is still the page we were already showing.
+        let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
+        if let path = failing?.path, serveCachedPage(webView, path: path) { return }
+        let stats = PageCache.shared.stats()
+        let detail = "\(error.localizedDescription)\n\nOffline cache: \(stats.pages) page(s), "
+            + (PageCache.shared.isUnlocked ? "unlocked" : "locked")
+            + ", path: \(failing?.path ?? "unknown")"
         let alert = UIAlertController(
             title: "Can't reach StreetFoodOS",
-            message: error.localizedDescription,
+            message: detail,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
