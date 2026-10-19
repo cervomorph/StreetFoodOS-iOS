@@ -10,6 +10,7 @@ final class WebViewController: UIViewController {
     /// Kept alive while the system sign-in sheet is up — releasing it cancels the session.
     private var authSession: ASWebAuthenticationSession?
     private var backgroundedAt: Date?
+    private var didRecoverFromCrash = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -195,6 +196,23 @@ extension WebViewController: WKNavigationDelegate {
         return true
     }
 
+    /// The web content process was killed (memory pressure / WebKit crash).
+    /// Standard recovery: one reload. If it recurs, say so plainly instead of
+    /// showing a connectivity lie.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if !didRecoverFromCrash {
+            didRecoverFromCrash = true
+            webView.reload()
+            return
+        }
+        let alert = UIAlertController(
+            title: "StreetFoodOS needs a restart",
+            message: "The page engine stopped responding twice. Close the app and open it again — nothing has been lost.",
+            preferredStyle: .alert
+        )
+        present(alert, animated: true)
+    }
+
     private func showLoadError(_ error: Error) {
         let ns = error as NSError
         if ns.code == NSURLErrorCancelled { return }
@@ -209,7 +227,7 @@ extension WebViewController: WKNavigationDelegate {
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url
         if let path = failing?.path, serveCachedPage(webView, path: path) { return }
         let stats = PageCache.shared.stats()
-        let detail = "\(error.localizedDescription)\n\nOffline cache: \(stats.pages) page(s), "
+        let detail = "\(error.localizedDescription) [\(ns.domain) \(ns.code)]\n\nOffline cache: \(stats.pages) page(s), "
             + (PageCache.shared.isUnlocked ? "unlocked" : "locked")
             + ", path: \(failing?.path ?? "unknown")"
         let alert = UIAlertController(
