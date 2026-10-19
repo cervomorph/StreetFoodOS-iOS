@@ -138,9 +138,9 @@ extension WebViewController: WKNavigationDelegate {
     /// Serve the saved copy with a banner naming when it was taken.
     @discardableResult
     private func serveCachedPage(_ webView: WKWebView, path: String) -> Bool {
-        guard PageCache.isCacheable(path),
-              let entry = try? PageCache.shared.load(path: path),
-              let entry else { return false }
+        guard PageCache.isCacheable(path) else { return false }
+        let loadedEntry = (try? PageCache.shared.load(path: path)) ?? nil
+        guard let entry = loadedEntry else { return false }
         let fmt = DateFormatter()
         fmt.dateStyle = .short
         fmt.timeStyle = .short
@@ -152,7 +152,7 @@ extension WebViewController: WKNavigationDelegate {
         } else {
             html = banner + entry.html
         }
-        webView.loadHTMLString(html, baseURL: URL(string: AppConfig.prodURL.absoluteString + path))
+        webView.loadHTMLString(html, baseURL: AppConfig.defaultURL.deletingLastPathComponent().appendingPathComponent(String(path.dropFirst())))
         return true
     }
 
