@@ -359,9 +359,7 @@ extension WebViewController: WKNavigationDelegate {
         if !isOnline() {
             let alert = UIAlertController(
                 title: "You're offline",
-                message: "No saved copy of this screen.
-
-\(stats.pages) screen\(stats.pages == 1 ? "" : "s") saved on this device — open one of those, or reconnect.",
+                message: "No saved copy of this screen.\n\n\(stats.pages) screen\(stats.pages == 1 ? "" : "s") saved on this device — open one of those, or reconnect.",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
