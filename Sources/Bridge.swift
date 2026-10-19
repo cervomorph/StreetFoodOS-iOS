@@ -73,6 +73,34 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         switch method {
         case "ping":
             completion(["ok": true, "platform": "ios", "version": AppConfig.version])
+
+        case "cache.save":
+            guard let path = args["path"] as? String, let html = args["html"] as? String else {
+                completion(["ok": false, "error": "bad args"]); return
+            }
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    try PageCache.shared.save(path: path, html: html)
+                    completion(["ok": true])
+                } catch {
+                    completion(["ok": false, "error": "\(error)"])
+                }
+            }
+
+        case "cache.stats":
+            let stats = PageCache.shared.stats()
+            completion(["ok": true, "pages": stats.pages, "bytes": stats.bytes,
+                        "unlocked": PageCache.shared.isUnlocked, "locked": AppLock.shared.hasPin])
+
+        case "cache.wipe":
+            PageCache.shared.wipe()
+            completion(["ok": true])
+
+        case "cache.has":
+            guard let path = args["path"] as? String else { completion(["ok": false]); return }
+            let entry = (try? PageCache.shared.load(path: path)) ?? nil
+            completion(["ok": true, "cached": entry != nil,
+                        "savedAt": entry.map { $0.savedAt.timeIntervalSince1970 } ?? 0])
         default:
             // Unknown methods fail soft — the web layer feature-detects via
             // isNative() and degrades (never a dead button).
