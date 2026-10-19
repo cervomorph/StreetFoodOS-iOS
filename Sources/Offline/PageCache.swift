@@ -106,7 +106,13 @@ final class PageCache {
         let blob = try JSONEncoder().encode(sealedPayload)
         let target = fileURL(for: path)
         queue.sync {
+            #if os(iOS)
             try? blob.write(to: target, options: [.atomic, .completeFileProtection])
+            #else
+            // The macOS CI host has no file-protection API — same code path
+            // minus the iOS-only option.
+            try? blob.write(to: target, options: [.atomic])
+            #endif
         }
     }
 
