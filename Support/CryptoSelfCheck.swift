@@ -55,7 +55,7 @@ expectThrow("altered nonce refused") { try CacheCrypto.openText(badIv, key: keyA
 
 // 5. wrapping under a password
 let wrapped = try CacheCrypto.wrap(deviceKey: keyA, secret: "EmberOak26")
-check("wrap records 100k iterations", wrapped.iters == 100_000, "\(wrapped.iters)")
+check("wrap records the HKDF marker", wrapped.kdf == "hkdf-sha256", wrapped.kdf)
 check("wrap salt is 16 bytes", Data(base64Encoded: wrapped.salt)?.count == 16)
 let unwrapped = try CacheCrypto.unwrap(wrapped, secret: "EmberOak26")
 check("wrap/unwrap restores the device key", unwrapped == keyA)
@@ -63,11 +63,11 @@ check("wrap/unwrap restores the device key", unwrapped == keyA)
 let probeSalt = Data(repeating: 1, count: 16)
 let kA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: probeSalt).withUnsafeBytes { Data($0) }
 let kB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: probeSalt).withUnsafeBytes { Data($0) }
-check("PBKDF2 differs across passwords", kA != kB, "A=\(kA.base64EncodedString()) B=\(kB.base64EncodedString())")
+check("KDF differs across passwords", kA != kB, "A=\(kA.base64EncodedString()) B=\(kB.base64EncodedString())")
 // Where exactly does the wrong password slip through?
 let saltW = Data(base64Encoded: wrapped.salt)!
-let rawA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: saltW, iterations: wrapped.iters).withUnsafeBytes { Data($0) }
-let rawB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: saltW, iterations: wrapped.iters).withUnsafeBytes { Data($0) }
+let rawA = try CacheCrypto.deriveKey(secret: "EmberOak26", salt: saltW).withUnsafeBytes { Data($0) }
+let rawB = try CacheCrypto.deriveKey(secret: "wrong-password", salt: saltW).withUnsafeBytes { Data($0) }
 check("wrap-salt KEKs differ", rawA != rawB, "A=\(rawA.base64EncodedString()) B=\(rawB.base64EncodedString())")
 let manual = try CacheCrypto.seal(Data("manual probe".utf8), key: rawA)
 expectThrow("manual wrong-KEK open refused") { try CacheCrypto.open(manual, key: rawB) }
@@ -89,7 +89,7 @@ check("short PIN wraps work too", unwrappedPin == keyA)
 let sealedJSON = try JSONSerialization.jsonObject(with: CacheCrypto.encode(sealed)) as! [String: Any]
 check("sealed JSON has exactly v, iv, ct", Set(sealedJSON.keys) == Set(["v", "iv", "ct"]), "\(sealedJSON.keys)")
 let wrappedJSON = try JSONSerialization.jsonObject(with: CacheCrypto.encode(wrapped)) as! [String: Any]
-check("wrapped JSON has exactly salt, iters, v, iv, ct", Set(wrappedJSON.keys) == Set(["salt", "iters", "v", "iv", "ct"]), "\(wrappedJSON.keys)")
+check("wrapped JSON has exactly salt, kdf, v, iv, ct", Set(wrappedJSON.keys) == Set(["salt", "kdf", "v", "iv", "ct"]), "\(wrappedJSON.keys)")
 check("round-trip through JSON survives", try CacheCrypto.openText(CacheCrypto.decodeSealed(try CacheCrypto.encode(sealed)), key: keyA) == message)
 
 // 7. empty payload is still sealed properly

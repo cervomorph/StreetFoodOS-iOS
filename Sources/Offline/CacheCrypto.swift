@@ -1,6 +1,5 @@
 import Foundation
 import CryptoKit
-import CommonCrypto
 
 /// Cache encryption primitives for the native page cache (P3).
 ///
@@ -16,7 +15,7 @@ import CommonCrypto
 enum CacheCrypto {
 
     static let version = 1
-    static let iterations = 100_000
+    static let kdfName = "hkdf-sha256"
     static let keyBytes = 32
     static let saltBytes = 16
     static let nonceBytes = 12
@@ -29,7 +28,7 @@ enum CacheCrypto {
 
     struct Wrapped: Codable, Equatable {
         var salt: String
-        var iters: Int
+        var kdf: String
         var v: Int
         var iv: String
         var ct: String
@@ -60,26 +59,17 @@ enum CacheCrypto {
 
     // MARK: - Key derivation (PBKDF2-SHA256)
 
-    static func deriveKey(secret: String, salt: Data, iterations: Int = iterations) throws -> SymmetricKey {
+    static func deriveKey(secret: String, salt: Data) throws -> SymmetricKey {
         guard let secretData = secret.data(using: .utf8), !secretData.isEmpty else { throw CryptoError.deriveFailed }
-        var derived = [UInt8](repeating: 0, count: keyBytes)
-        let status = derived.withUnsafeMutableBytes { outPtr -> Int32 in
-            salt.withUnsafeBytes { saltPtr -> Int32 in
-                CCKeyDerivationPBKDF(
-                    CCPBKDFAlgorithm(kCCPBKDF2),
-                    secretData.withUnsafeBytes { $0.bindMemory(to: Int8.self).baseAddress },
-                    secretData.count,
-                    saltPtr.bindMemory(to: UInt8.self).baseAddress,
-                    salt.count,
-                    CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                    UInt32(iterations),
-                    outPtr.bindMemory(to: UInt8.self).baseAddress,
-                    keyBytes
-                )
-            }
-        }
-        guard status == kCCSuccess else { throw CryptoError.deriveFailed }
-        return SymmetricKey(data: Data(derived))
+        // Pre-hash so any secret length is accepted, then HKDF-SHA256 (CryptoKit
+        // native — no CommonCrypto pointer handling, deterministic on device).
+        let ikm = SHA256.hash(data: secretData)
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: Data(ikm)),
+            salt: salt,
+            info: Data("sfos-cache-v1".utf8),
+            outputByteCount: keyBytes
+        )
     }
 
     // MARK: - Sealing (AES-GCM)
@@ -120,7 +110,7 @@ enum CacheCrypto {
         combined.append(box.tag)
         return Wrapped(
             salt: salt.base64EncodedString(),
-            iters: iterations,
+            kdf: kdfName,
             v: version,
             iv: nonce.withUnsafeBytes { Data($0) }.base64EncodedString(),
             ct: combined.base64EncodedString()
@@ -128,8 +118,8 @@ enum CacheCrypto {
     }
 
     static func unwrap(_ wrapped: Wrapped, secret: String) throws -> Data {
-        guard wrapped.v == version, let salt = Data(base64Encoded: wrapped.salt) else { throw CryptoError.badPayload }
-        let kek = try deriveKey(secret: secret, salt: salt, iterations: wrapped.iters)
+        guard wrapped.v == version, wrapped.kdf == kdfName, let salt = Data(base64Encoded: wrapped.salt) else { throw CryptoError.badPayload }
+        let kek = try deriveKey(secret: secret, salt: salt)
         let sealed = Sealed(v: wrapped.v, iv: wrapped.iv, ct: wrapped.ct)
         let key = try openData(sealed, symmetricKey: kek)
         guard key.count == keyBytes else { throw CryptoError.badKey }
