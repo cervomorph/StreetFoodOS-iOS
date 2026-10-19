@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 /// Shown when the web view cannot load a page. It exists because a modal
 /// "can't reach" alert told us nothing: the same URL can fail in WKWebView
 /// while answering perfectly to a normal HTTP client. This panel probes the
