@@ -97,7 +97,7 @@ enum CacheCrypto {
         guard key.count == keyBytes, sealed.v == version else { throw CryptoError.badPayload }
         guard let nonceData = Data(base64Encoded: sealed.iv),
               let combined = Data(base64Encoded: sealed.ct),
-              combined.count > 16 else { throw CryptoError.badPayload }
+              combined.count >= 16 else { throw CryptoError.badPayload }
         let nonce = try AES.GCM.Nonce(data: nonceData)
         let ciphertext = combined.prefix(combined.count - 16)
         let tag = combined.suffix(16)
@@ -162,7 +162,7 @@ enum CacheCrypto {
     private static func openData(_ sealed: Sealed, symmetricKey: SymmetricKey) throws -> Data {
         guard let nonceData = Data(base64Encoded: sealed.iv),
               let combined = Data(base64Encoded: sealed.ct),
-              combined.count > 16 else { throw CryptoError.badPayload }
+              combined.count >= 16 else { throw CryptoError.badPayload }
         let nonce = try AES.GCM.Nonce(data: nonceData)
         let box = try AES.GCM.SealedBox(
             nonce: nonce,
