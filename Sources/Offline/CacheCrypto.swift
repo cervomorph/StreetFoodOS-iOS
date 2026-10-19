@@ -94,15 +94,8 @@ enum CacheCrypto {
     }
 
     static func open(_ sealed: Sealed, key: Data) throws -> Data {
-        guard key.count == keyBytes, sealed.v == version else { throw CryptoError.badPayload }
-        guard let nonceData = Data(base64Encoded: sealed.iv),
-              let combined = Data(base64Encoded: sealed.ct),
-              combined.count >= 16 else { throw CryptoError.badPayload }
-        let nonce = try AES.GCM.Nonce(data: nonceData)
-        let ciphertext = combined.prefix(combined.count - 16)
-        let tag = combined.suffix(16)
-        let box = try AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
-        return try AES.GCM.open(box, using: SymmetricKey(data: key))
+        guard key.count == keyBytes else { throw CryptoError.badKey }
+        return try openData(sealed, symmetricKey: SymmetricKey(data: key))
     }
 
     static func sealText(_ text: String, key: Data) throws -> Sealed {
@@ -160,15 +153,15 @@ enum CacheCrypto {
     // MARK: - Internals
 
     private static func openData(_ sealed: Sealed, symmetricKey: SymmetricKey) throws -> Data {
-        guard let nonceData = Data(base64Encoded: sealed.iv),
+        guard sealed.v == version,
+              let nonceData = Data(base64Encoded: sealed.iv),
               let combined = Data(base64Encoded: sealed.ct),
               combined.count >= 16 else { throw CryptoError.badPayload }
-        let nonce = try AES.GCM.Nonce(data: nonceData)
-        let box = try AES.GCM.SealedBox(
-            nonce: nonce,
-            ciphertext: combined.prefix(combined.count - 16),
-            tag: combined.suffix(16)
-        )
+        let nonce = try AES.GCM.Nonce(data: Data(nonceData))
+        let ciphertext = Data(combined.prefix(combined.count - 16))
+        let tag = Data(combined.suffix(16))
+        guard tag.count == 16 else { throw CryptoError.badPayload }
+        let box = try AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
         return try AES.GCM.open(box, using: symmetricKey)
     }
 
