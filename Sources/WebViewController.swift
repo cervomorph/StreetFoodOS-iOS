@@ -11,6 +11,7 @@ final class WebViewController: UIViewController {
     private var authSession: ASWebAuthenticationSession?
     private var backgroundedAt: Date?
     private var didRecoverFromCrash = false
+    private var didRetryInitialLoad = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -221,6 +222,17 @@ extension WebViewController: WKNavigationDelegate {
         // Safari links). Never dressed up as a connectivity failure — the
         // scary "Can't reach StreetFoodOS" alert was entirely self-inflicted.
         if ns.domain == "WebKitErrorDomain" && (ns.code == 101 || ns.code == 102) { return }
+        // 300 = PlugInWillHandleLoad: WebKit handed the load to a handler
+        // (custom scheme / plugin) and interrupted the navigation. Not a
+        // connectivity failure — and if the view is left blank, reload once.
+        if ns.domain == "WebKitErrorDomain" && ns.code == 300 {
+            let blank = (webView.url == nil) || (webView.url?.absoluteString == "about:blank")
+            if blank && !didRetryInitialLoad {
+                didRetryInitialLoad = true
+                webView.load(URLRequest(url: AppConfig.launchURL))
+            }
+            return
+        }
         // Offline: serve the encrypted copy this device saved for that page.
         // The failing URL comes from the error — on a provisional failure
         // webView.url is still the page we were already showing.
