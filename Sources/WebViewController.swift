@@ -22,7 +22,7 @@ final class WebViewController: UIViewController {
 
     private func mark(_ label: String) {
         timeline.append(String(format: "%@=%.1fs", label, Date().timeIntervalSince(launchStart)))
-        if timeline.count > 6 { timeline.removeFirst() }
+        if timeline.count > 9 { timeline.removeFirst() }
     }
     private let loadingOverlay = UIView()
     private let spinner = UIActivityIndicatorView(style: .large)
