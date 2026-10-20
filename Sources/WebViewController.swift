@@ -65,11 +65,6 @@ final class WebViewController: UIViewController {
         // navigation (WebKitErrorDomain 300) and left a blank page.
 
         makeLoadingOverlay()
-        // The count must be live: the sweep saves pages while the user sits on
-        // one screen, so a label drawn at didFinish never showed progress.
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.refreshCacheStatus()
-        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -173,7 +168,6 @@ final class WebViewController: UIViewController {
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         NSLog("SFOS_ENV iOS=%@ lowPower=%d", os, lowPower ? 1 : 0)
         mark("lowPwr=\(lowPower ? 1 : 0)")
-        probeWithThrowawayWebView()
     }
 
     /// A second, independent WKWebView loading the same URL. If it is fast the
@@ -423,6 +417,7 @@ extension WebViewController: WKNavigationDelegate {
     }
 
     private func showCacheBanner(_ text: String) {
+        return  // debug banner retired (20/10)
         let label = UILabel()
         label.text = "  \(text)  "
         label.numberOfLines = 0
@@ -465,18 +460,6 @@ extension WebViewController: WKNavigationDelegate {
         spinner.startAnimating()
         mark("ui")
 
-        // Ground-truth status line (temporary, P3 debugging): shows whether the
-        // cache is unlocked and how many pages it holds, on the device itself.
-        statusLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        statusLabel.textColor = UIColor(white: 1, alpha: 0.55)
-        statusLabel.numberOfLines = 2
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(statusLabel)
-        NSLayoutConstraint.activate([
-            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            statusLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
-        ])
     }
 
     private func refreshCacheStatus() {
