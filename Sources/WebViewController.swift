@@ -115,7 +115,7 @@ final class WebViewController: UIViewController {
             self.dismiss(animated: true) {
                 self.hasStartedInitialLoad = true
                 self.mark("loadStart")
-                self.webView.load(URLRequest(url: AppConfig.launchURL))
+                self.loadInitialSmart()
             }
         }
         mark("lockShown")
@@ -236,6 +236,7 @@ extension WebViewController: WKNavigationDelegate {
             return
         }
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
+        enforceOwner()
         cacheCurrentPage()
     }
 
@@ -361,6 +362,40 @@ extension WebViewController: WKNavigationDelegate {
             label.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             label.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+    }
+
+    /// Instant launch: if a fresh copy of the landing screen exists, paint it
+    /// from disk (no network, no WebKit NetworkProcess wait) and let the next
+    /// navigation fetch live. Falls back to the network path when there is no
+    /// usable copy.
+    private func loadInitialSmart() {
+        let path = AppConfig.launchURL.path
+        let entry = (try? PageCache.shared.load(path: path)) ?? nil
+        let fresh = entry.map { Date().timeIntervalSince($0.savedAt) < 600 } ?? false
+        if let entry, fresh, PageCache.shared.isUnlocked,
+           let url = URL(string: "\(OfflineSchemeHandler.scheme)://\(OfflineSchemeHandler.host)\(path)") {
+            setLoading(false)
+            webView.load(URLRequest(url: url))
+            NSLog("SFOS_LAUNCH served %@ from cache (age %.0fs)", path, Date().timeIntervalSince(entry.savedAt))
+            return
+        }
+        loadClearingStaleCacheIfUpgraded()
+    }
+
+    /// A different signed-in user on this device must never see the previous
+    /// user's cached pages.
+    private func enforceOwner() {
+        webView.evaluateJavaScript("window.userLogin || ''") { [weak self] result, _ in
+            guard let self, let who = result as? String, !who.isEmpty else { return }
+            let key = "sfos.cacheOwner"
+            let previous = UserDefaults.standard.string(forKey: key)
+            if let previous, previous != who {
+                PageCache.shared.wipe()
+                OfflineAssetStore.shared.wipe()
+                NSLog("SFOS_CACHE owner changed %@ -> %@, cache wiped", previous, who)
+            }
+            UserDefaults.standard.set(who, forKey: key)
+        }
     }
 
     private func makeLoadingOverlay() {
