@@ -229,6 +229,22 @@ extension WebViewController: WKNavigationDelegate {
         if hasLoadedOnce { setLoading(false) }
     }
 
+    /// OAuth must run in the system sheet: inside the web view Google will
+    /// not offer accounts or passkeys. This delegate was lost in an earlier
+    /// refactor, which is why the Google option stopped working.
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url,
+           navigationAction.targetFrame?.isMainFrame != false,
+           isAuthInitiation(url) {
+            decisionHandler(.cancel)
+            startAppAuthSession(startingAt: url)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
         hasLoadedOnce = true
