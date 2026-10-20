@@ -93,9 +93,21 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
+      - name: Export a signed copy for verification
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/StreetFoodOS.xcarchive" \
+            -exportOptionsPlist Support/ExportOptions-verify.plist \
+            -exportPath "$RUNNER_TEMP/verify" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
       - name: Verify the association in the exported IPA
         run: |
-          IPA=$(ls -t "$RUNNER_TEMP/export"/*.ipa 2>/dev/null | head -1)
+          IPA=$(ls -t "$RUNNER_TEMP/verify"/*.ipa 2>/dev/null | head -1)
           echo "ipa: $IPA"
           if [ -z "$IPA" ]; then echo "ASSOC: NO IPA"; exit 0; fi
           rm -rf /tmp/ipa && mkdir -p /tmp/ipa
