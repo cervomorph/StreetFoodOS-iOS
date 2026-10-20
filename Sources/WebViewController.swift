@@ -123,6 +123,7 @@ final class WebViewController: UIViewController {
             }
         }
         mark("lockShown")
+        logEnvironment()
         warmConnection()
         present(lock, animated: false)
     }
@@ -158,6 +159,31 @@ final class WebViewController: UIViewController {
                 self?.refreshCacheStatus()
             }
         }.resume()
+    }
+
+    /// Device facts that differ between the fast iPhone and the slow iPad.
+    private func logEnvironment() {
+        let os = UIDevice.current.systemVersion
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        NSLog("SFOS_ENV iOS=%@ lowPower=%d", os, lowPower ? 1 : 0)
+        mark("lowPwr=\(lowPower ? 1 : 0)")
+        probeWithThrowawayWebView()
+    }
+
+    /// A second, independent WKWebView loading the same URL. If it is fast the
+    /// stall is in OUR instance; if it is slow it is WebKit on this device.
+    private func probeWithThrowawayWebView() {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        let probe = WKWebView(frame: .zero, configuration: config)
+        let start = Date()
+        probe.load(URLRequest(url: AppConfig.launchURL))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+            let elapsed = Date().timeIntervalSince(start)
+            NSLog("SFOS_PROBE throwaway progress=%.0f%% after %.1fs", probe.estimatedProgress * 100, elapsed)
+            self.mark(String(format: "probe=%.1fs", elapsed))
+            self.refreshCacheStatus()
+        }
     }
 
     private func makeWebView() -> WKWebView {
