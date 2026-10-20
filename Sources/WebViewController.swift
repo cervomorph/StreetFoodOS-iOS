@@ -314,7 +314,29 @@ extension WebViewController: WKNavigationDelegate {
         if path == "/login" { return }
         guard PageCache.isCacheable(path) else { NSLog("SFOS_CACHE skip %@ (not cacheable)", path); return }
         guard PageCache.shared.isUnlocked else { NSLog("SFOS_CACHE skip %@ (locked)", path); return }
-        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
+        webView.evaluateJavaScript("""
+        (function () {
+          try {
+            var css = '';
+            for (var i = 0; i < document.styleSheets.length; i++) {
+              try {
+                var rules = document.styleSheets[i].cssRules;
+                for (var j = 0; j < rules.length; j++) { css += rules[j].cssText + '\n'; }
+              } catch (e) {}
+            }
+            var clone = document.documentElement.cloneNode(true);
+            var heads = clone.querySelectorAll('link[rel="stylesheet"]');
+            for (var k = 0; k < heads.length; k++) { heads[k].remove(); }
+            var scripts = clone.querySelectorAll('script');
+            for (var m = 0; m < scripts.length; m++) { scripts[m].remove(); }
+            var style = document.createElement('style');
+            style.textContent = css;
+            (clone.querySelector('head') || clone).appendChild(style);
+            clone.setAttribute('data-sfos-offline-snapshot', '1');
+            return '<!DOCTYPE html>' + clone.outerHTML;
+          } catch (e) { return document.documentElement.outerHTML; }
+        })();
+        """) { result, error in
             if let error { NSLog("SFOS_CACHE JS error for %@: %@", path, String(describing: error)) }
             guard let html = result as? String, html.count > 200 else {
                 NSLog("SFOS_CACHE skip %@ (html type=%@ len=%d)", path, String(describing: type(of: result)), (result as? String)?.count ?? -1)
