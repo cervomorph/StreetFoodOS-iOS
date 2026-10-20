@@ -234,7 +234,7 @@ extension WebViewController: WKNavigationDelegate {
         if webView.url?.scheme == OfflineSchemeHandler.scheme {
             let p = webView.url?.path ?? "/"
             let saved = (try? PageCache.shared.load(path: p)) ?? nil
-            if !isOnline() { injectOfflineBanner(savedAt: saved?.savedAt) }
+            if !hasNetworkPath() { injectOfflineBanner(savedAt: saved?.savedAt) }
             return
         }
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
@@ -370,13 +370,18 @@ extension WebViewController: WKNavigationDelegate {
         ])
     }
 
-    /// Best-effort connectivity check. A wrong "offline" only costs a cached
-    /// paint; a wrong "online" would serve stale bytes as if they were live.
-    private func isOnline() -> Bool {
+    /// Fast, non-blocking connectivity check used to decide whether the
+    /// offline banner is honest. Distinct from isOnline(), which probes /health.
+    private func hasNetworkPath() -> Bool {
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
-        guard let reach = SCNetworkReachabilityCreateWithAddress(nil, &address) else { return true }
+        let reach: SCNetworkReachability? = withUnsafePointer(to: &address) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                SCNetworkReachabilityCreateWithAddress(nil, sa)
+            }
+        }
+        guard let reach else { return true }
         var flags = SCNetworkReachabilityFlags()
         guard SCNetworkReachabilityGetFlags(reach, &flags) else { return true }
         let reachable = flags.contains(.reachable)
@@ -389,13 +394,9 @@ extension WebViewController: WKNavigationDelegate {
     /// navigation fetch live. Falls back to the network path when there is no
     /// usable copy.
     private func loadInitialSmart() {
-        // Online is always live: the cache is a fallback, never a substitute.
-        // Serving a cached page while online made the app look offline and left
-        // links stranded on the scheme origin.
-        if isOnline() {
-            loadClearingStaleCacheIfUpgraded()
-            return
-        }
+        // Instant paint whether or not there is a network: the point of the
+        // cache is the load-time saving. Links stay live because nav.js hands
+        // them to the shell, and the banner only appears when truly offline.
         let path = AppConfig.launchURL.path
         let entry = (try? PageCache.shared.load(path: path)) ?? nil
         let fresh = entry.map { Date().timeIntervalSince($0.savedAt) < 600 } ?? false
