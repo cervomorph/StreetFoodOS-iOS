@@ -419,6 +419,57 @@ extension WebViewController: WKNavigationDelegate {
         return reachable
     }
 
+    /// Pull every local stylesheet/script/image/font the page referenced and
+    /// keep a copy on disk, so the page runs offline from the scheme handler.
+    private func harvestAssets(html: String) {
+        let pattern = #"(?:src|href)\s*=\s*[\"'](/[^\"'\s]+\.(?:css|js|mjs|png|jpe?g|svg|webp|gif|woff2?|ttf|ico))[\"']"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return }
+        let ns = html as NSString
+        var seen = Set<String>()
+        var paths: [String] = []
+        for m in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges > 1 {
+            let p = ns.substring(with: m.range(at: 1))
+            if seen.insert(p).inserted { paths.append(p) }
+        }
+        guard !paths.isEmpty else { return }
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            let header = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            for path in paths {
+                guard let url = URL(string: path, relativeTo: AppConfig.defaultURL)?.absoluteURL else { continue }
+                if OfflineAssetStore.shared.load(path: path) != nil { continue }
+                var request = URLRequest(url: url)
+                request.setValue(header, forHTTPHeaderField: "Cookie")
+                request.timeoutInterval = 20
+                URLSession.shared.dataTask(with: request) { data, response, _ in
+                    guard let data, !data.isEmpty,
+                          let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
+                    let mime = http.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+                    OfflineAssetStore.shared.store(path: path, data: data, contentType: mime)
+                }.resume()
+            }
+        }
+    }
+
+    /// The yellow "showing the copy saved …" strip, injected into offline pages.
+    private func injectOfflineBanner(savedAt: Date?) {
+        let stamp: String
+        if let savedAt {
+            let fmt = DateFormatter(); fmt.dateStyle = .short; fmt.timeStyle = .short
+            stamp = fmt.string(from: savedAt)
+        } else { stamp = "earlier" }
+        let js = """
+        (function () {
+          if (document.getElementById('sfos-offline-banner')) { return; }
+          var d = document.createElement('div');
+          d.id = 'sfos-offline-banner';
+          d.textContent = 'Offline — showing the copy saved \(stamp)';
+          d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#facc15;color:#111;font:500 13px -apple-system,sans-serif;padding:8px 12px;text-align:center';
+          document.body.appendChild(d);
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
     private func presentDiagnostics(error: Error, ns: NSError) {
         let target = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url ?? AppConfig.launchURL
         let panel = DiagnosticViewController(
