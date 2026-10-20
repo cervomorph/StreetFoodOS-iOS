@@ -228,20 +228,36 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
-        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
+        setLoading(false)
+        if webView.url?.scheme == OfflineSchemeHandler.scheme {
+            let p = webView.url?.path ?? "/"
+            let saved = (try? PageCache.shared.load(path: p)) ?? nil
+            injectOfflineBanner(savedAt: saved?.savedAt)
+            return
+        }
+        if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
+        cacheCurrentPage()
+    }
+
+    /// Snapshot the finished page into the encrypted cache and keep its assets.
+    private func cacheCurrentPage() {
+        guard let url = webView.url, let scheme = url.scheme, scheme == "http" || scheme == "https" else { return }
+        let path = url.path
+        if path == "/logout" { PageCache.shared.wipe(); return }
+        if path == "/login" { return }
+        guard PageCache.isCacheable(path) else { return }
+        guard PageCache.shared.isUnlocked else { return }
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
+            guard let self else { return }
             if let error { NSLog("SFOS_CACHE JS error for %@: %@", path, String(describing: error)) }
-            guard let html = result as? String, html.count > 200 else {
-                NSLog("SFOS_CACHE skip %@ (html type=%@ len=%d)", path, String(describing: type(of: result)), (result as? String)?.count ?? -1)
-                return
-            }
+            guard let html = result as? String, html.count > 200 else { return }
             DispatchQueue.global(qos: .utility).async {
                 do {
                     try PageCache.shared.save(path: path, html: html)
+                    self.harvestAssets(html: html)
                     NSLog("SFOS_CACHE saved %@ (%d bytes), total=%d", path, html.count, PageCache.shared.stats().pages)
                 } catch {
-                    self.lastCacheError = String(describing: error)
                     NSLog("SFOS_CACHE save FAILED %@: %@", path, String(describing: error))
-                    DispatchQueue.main.async { self.refreshCacheStatus() }
                 }
             }
         }
