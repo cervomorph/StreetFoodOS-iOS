@@ -115,7 +115,8 @@ final class OfflineSchemeHandler: NSObject, WKURLSchemeHandler {
         // Neither: go to the network with the page's own cookies. A cached
         // navigation must never dead-end just because that screen was not
         // swept yet.
-        let target = URL(string: "https://\(AppConfig.host)\(path)")
+        let host = AppConfig.defaultURL.host ?? "app.streetfoodos.com"
+        let target = URL(string: "https://\(host)\(path)")
         if let target {
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
                 var request = URLRequest(url: target)
