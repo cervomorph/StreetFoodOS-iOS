@@ -65,6 +65,8 @@ jobs:
       - name: Verify the association in the signed archive
         run: |
           APP="$RUNNER_TEMP/StreetFoodOS.xcarchive/Products/Applications/StreetFoodOS.app"
+          # The archive is NOT signed (export signs it), so this early check is
+          # informational only; the authoritative check runs after export.
           echo "pbxproj CODE_SIGN_ENTITLEMENTS refs: $(grep -c CODE_SIGN_ENTITLEMENTS StreetFoodOS.xcodeproj/project.pbxproj || true)"
           echo "entitlements file: $(ls -l Support/StreetFoodOS.entitlements 2>&1)"
           ls -d "$APP" || echo "APP PATH MISSING"
@@ -90,3 +92,18 @@ jobs:
             -authenticationKeyPath "$KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Verify the association in the exported IPA
+        run: |
+          IPA=$(ls -t "$RUNNER_TEMP"/*.ipa 2>/dev/null | head -1)
+          echo "ipa: $IPA"
+          if [ -z "$IPA" ]; then echo "ASSOC: NO IPA"; exit 0; fi
+          rm -rf /tmp/ipa && mkdir -p /tmp/ipa
+          unzip -o -q "$IPA" -d /tmp/ipa
+          APP=$(find /tmp/ipa/Payload -maxdepth 1 -name "*.app" | head -1)
+          echo "app: $APP"
+          codesign -d --entitlements :- "$APP" > /tmp/ent.out 2>/tmp/ent.err || true
+          echo "--- entitlements ---"; cat /tmp/ent.out; cat /tmp/ent.err
+          if grep -q "associated-domains" /tmp/ent.out; then echo "ASSOC: PRESENT"; else echo "ASSOC: MISSING"; fi
+          if grep -q "webcredentials:app.streetfoodos.com" /tmp/ent.out; then echo "DOMAIN: OK"; else echo "DOMAIN: MISSING"; fi
+
