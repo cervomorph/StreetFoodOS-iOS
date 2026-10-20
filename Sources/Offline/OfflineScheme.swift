@@ -112,16 +112,48 @@ final class OfflineSchemeHandler: NSObject, WKURLSchemeHandler {
             respond(urlSchemeTask, data: asset.data, mime: asset.contentType)
             return
         }
-        // Neither: a tiny, navigable fallback so the user is never stuck.
+        // Neither: go to the network with the page's own cookies. A cached
+        // navigation must never dead-end just because that screen was not
+        // swept yet.
+        let target = URL(string: "https://\(AppConfig.host)\(path)")
+        if let target {
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+                var request = URLRequest(url: target)
+                request.timeoutInterval = 25
+                let header = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                if !header.isEmpty { request.setValue(header, forHTTPHeaderField: "Cookie") }
+                URLSession.shared.dataTask(with: request) { data, response, _ in
+                    guard let http = response as? HTTPURLResponse, let data else {
+                        self.respondOfflineNotice(urlSchemeTask)
+                        return
+                    }
+                    let mime = http.value(forHTTPHeaderField: "Content-Type") ?? "text/html; charset=utf-8"
+                    if http.statusCode == 200, PageCache.isCacheable(path), PageCache.shared.isUnlocked,
+                       mime.contains("text/html"),
+                       let html = String(data: data, encoding: .utf8) {
+                        try? PageCache.shared.save(path: path, html: html,
+                                                   etag: http.value(forHTTPHeaderField: "ETag"),
+                                                   build: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+                                                   owner: UserDefaults.standard.string(forKey: "sfos.cacheOwner"))
+                    }
+                    self.respond(urlSchemeTask, data: data, mime: mime, status: http.statusCode)
+                }.resume()
+            }
+            return
+        }
+        respondOfflineNotice(urlSchemeTask)
+    }
+
+    private func respondOfflineNotice(_ task: WKURLSchemeTask) {
         let html = """
         <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>body{background:#0b0f14;color:#e6e6e6;font:16px -apple-system,system-ui;padding:28px;margin:0}
         a{color:#4cc38a;text-decoration:none;font-weight:600}</style></head><body>
-        <p>This screen was not saved for offline use.</p>
+        <p>This screen is not available — no connection and no saved copy.</p>
         <p><a href="/dashboard">Go to the dashboard</a></p>
         </body></html>
         """
-        respond(urlSchemeTask, data: Data(html.utf8), mime: "text/html; charset=utf-8", status: 404)
+        respond(task, data: Data(html.utf8), mime: "text/html; charset=utf-8", status: 404)
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
