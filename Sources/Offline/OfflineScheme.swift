@@ -129,8 +129,13 @@ final class OfflineSchemeHandler: NSObject, WKURLSchemeHandler {
                         return
                     }
                     let mime = http.value(forHTTPHeaderField: "Content-Type") ?? "text/html; charset=utf-8"
-                    if http.statusCode == 200, PageCache.isCacheable(path), PageCache.shared.isUnlocked,
-                       mime.contains("text/html"),
+                    // Never cache a redirect: a request for /dashboard that lands
+                    // on /login would otherwise poison the dashboard's key with a
+                    // signed-out page.
+                    let landedPath = http.url?.path
+                    let redirected = landedPath != nil && landedPath != path
+                    if http.statusCode == 200, !redirected, PageCache.isCacheable(path),
+                       PageCache.shared.isUnlocked, mime.contains("text/html"),
                        let html = String(data: data, encoding: .utf8) {
                         try? PageCache.shared.save(path: path, html: html,
                                                    etag: http.value(forHTTPHeaderField: "ETag"),
