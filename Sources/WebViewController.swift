@@ -543,8 +543,11 @@ extension WebViewController: WKNavigationDelegate {
             webView.evaluateJavaScript("location.href") { [weak self] result, _ in
                 NSLog("SFOS_NAVTEST step2 href=%@", (result as? String) ?? "nil")
                 let js = """
-                (function(){var a=document.querySelector('a[href^="/"]:not([href^="//"])');
-                if(!a){return 'no-link';} var h=a.getAttribute('href'); a.click(); return h;})();
+                (function(){var now=location.pathname;
+                var as=document.querySelectorAll('a[href^="/"]:not([href^="//"])');
+                for(var i=0;i<as.length;i++){var h=as[i].getAttribute('href');
+                  if(h && h!==now && h.indexOf('#')===-1){as[i].click();return h;}}
+                return 'no-other-link';})();
                 """
                 self?.webView.evaluateJavaScript(js) { res, _ in
                     NSLog("SFOS_NAVTEST step2 clicked=%@", (res as? String) ?? "nil")

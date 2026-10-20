@@ -87,6 +87,19 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 }
             }
 
+        case "nav.open":
+            guard let path = args["path"] as? String, path.hasPrefix("/") else {
+                completion(["ok": false, "error": "bad path"]); return
+            }
+            DispatchQueue.main.async {
+                if let url = URL(string: "\(OfflineSchemeHandler.scheme)://\(OfflineSchemeHandler.host)\(path)") {
+                    self.webView?.load(URLRequest(url: url))
+                    completion(["ok": true])
+                } else {
+                    completion(["ok": false, "error": "bad url"])
+                }
+            }
+
         case "cache.stats":
             let stats = PageCache.shared.stats()
             completion(["ok": true, "pages": stats.pages, "bytes": stats.bytes,
