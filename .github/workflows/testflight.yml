@@ -59,7 +59,6 @@ jobs:
             -authenticationKeyPath "$KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="$(date -u +%Y%m%d%H%M)"
 
       - name: Verify the association in the signed archive
