@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import SystemConfiguration
 import AuthenticationServices
 
 /// The shell's single screen: a full-bleed WKWebView pointed at the web app.
@@ -233,7 +234,7 @@ extension WebViewController: WKNavigationDelegate {
         if webView.url?.scheme == OfflineSchemeHandler.scheme {
             let p = webView.url?.path ?? "/"
             let saved = (try? PageCache.shared.load(path: p)) ?? nil
-            injectOfflineBanner(savedAt: saved?.savedAt)
+            if !isOnline() { injectOfflineBanner(savedAt: saved?.savedAt) }
             return
         }
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
@@ -369,11 +370,32 @@ extension WebViewController: WKNavigationDelegate {
         ])
     }
 
+    /// Best-effort connectivity check. A wrong "offline" only costs a cached
+    /// paint; a wrong "online" would serve stale bytes as if they were live.
+    private func isOnline() -> Bool {
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        guard let reach = SCNetworkReachabilityCreateWithAddress(nil, &address) else { return true }
+        var flags = SCNetworkReachabilityFlags()
+        guard SCNetworkReachabilityGetFlags(reach, &flags) else { return true }
+        let reachable = flags.contains(.reachable)
+        let needsConnection = flags.contains(.connectionRequired)
+        return reachable && !needsConnection
+    }
+
     /// Instant launch: if a fresh copy of the landing screen exists, paint it
     /// from disk (no network, no WebKit NetworkProcess wait) and let the next
     /// navigation fetch live. Falls back to the network path when there is no
     /// usable copy.
     private func loadInitialSmart() {
+        // Online is always live: the cache is a fallback, never a substitute.
+        // Serving a cached page while online made the app look offline and left
+        // links stranded on the scheme origin.
+        if isOnline() {
+            loadClearingStaleCacheIfUpgraded()
+            return
+        }
         let path = AppConfig.launchURL.path
         let entry = (try? PageCache.shared.load(path: path)) ?? nil
         let fresh = entry.map { Date().timeIntervalSince($0.savedAt) < 600 } ?? false
