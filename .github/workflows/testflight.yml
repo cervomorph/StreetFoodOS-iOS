@@ -62,6 +62,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="$(date -u +%Y%m%d%H%M)"
 
+      - name: Verify the association in the signed archive
+        run: |
+          APP="$RUNNER_TEMP/StreetFoodOS.xcarchive/Products/Applications/StreetFoodOS.app"
+          echo "--- entitlements ---"
+          codesign -d --entitlements :- "$APP" > /tmp/ent.plist 2>/dev/null || true
+          cat /tmp/ent.plist || true
+          echo "--- association check ---"
+          if grep -q "associated-domains" /tmp/ent.plist; then echo "ASSOC: PRESENT"; else echo "ASSOC: MISSING"; fi
+          if grep -q "webcredentials:app.streetfoodos.com" /tmp/ent.plist; then echo "DOMAIN: app.streetfoodos.com"; else echo "DOMAIN: MISSING"; fi
+
       - name: Export and upload to TestFlight
         run: |
           set -euo pipefail

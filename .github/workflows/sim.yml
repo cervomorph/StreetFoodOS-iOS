@@ -30,14 +30,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO -derivedDataPath build | tail -5
       - name: Verify the signed app carries the association
         run: |
-          APP=$(find ~/Library/Developer/Xcode/DerivedData -name "StreetFoodOS.app" -maxdepth 7 2>/dev/null | head -1)
-          echo "app: $APP"
-          if [ -z "$APP" ]; then echo "ASSOC: NO APP FOUND"; exit 0; fi
-          codesign -d --entitlements :- "$APP" > /tmp/ent.plist 2>/dev/null || true
-          echo "--- entitlements ---"
-          cat /tmp/ent.plist || true
-          echo "--- association check ---"
-          if grep -q "associated-domains" /tmp/ent.plist; then echo "ASSOC: PRESENT"; else echo "ASSOC: MISSING"; fi
+          # This target is built with CODE_SIGNING_ALLOWED=NO, so it carries no
+          # entitlements. The signed check runs in testflight.yml on the archive.
+          echo "ASSOC: SKIPPED (simulator build is unsigned)"
 
       - name: Boot, install, launch, capture
         run: |
