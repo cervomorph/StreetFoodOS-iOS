@@ -109,7 +109,19 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 completion(["ok": false, "error": "bad path"]); return
             }
             DispatchQueue.main.async {
-                if let url = URL(string: "\(OfflineSchemeHandler.scheme)://\(OfflineSchemeHandler.host)\(path)") {
+                // Load the real origin, not the offline scheme: pages served
+                // through the scheme came back without their JS bindings, so
+                // the nav, burger and cog menus stopped responding. Offline
+                // still works — the failed load falls back to the cached copy.
+                let base = AppConfig.launchURL
+                var comps = URLComponents()
+                comps.scheme = base.scheme
+                comps.host = base.host
+                comps.port = base.port
+                let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+                comps.path = String(parts[0])
+                if parts.count > 1 { comps.query = String(parts[1]) }
+                if let url = comps.url {
                     self.webView?.load(URLRequest(url: url))
                     completion(["ok": true])
                 } else {
