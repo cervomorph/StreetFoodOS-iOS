@@ -412,20 +412,12 @@ extension WebViewController: WKNavigationDelegate {
     /// navigation fetch live. Falls back to the network path when there is no
     /// usable copy.
     private func loadInitialSmart() {
-        // Instant paint whether or not there is a network: the point of the
-        // cache is the load-time saving. Links stay live because nav.js hands
-        // them to the shell, and the banner only appears when truly offline.
-        let path = AppConfig.launchURL.path
-        let entry = (try? PageCache.shared.load(path: path)) ?? nil
-        let fresh = entry.map { Date().timeIntervalSince($0.savedAt) < 600 } ?? false
-        if let entry, fresh, PageCache.shared.isUnlocked,
-           let url = URL(string: "\(OfflineSchemeHandler.scheme)://\(OfflineSchemeHandler.host)\(path)") {
-            setLoading(false)
-            webView.load(URLRequest(url: url))
-            NSLog("SFOS_LAUNCH served %@ from cache (age %.0fs)", path, Date().timeIntervalSince(entry.savedAt))
-            return
-        }
+        // Always load the real origin. Cached pages served through the scheme
+        // arrive without working JavaScript (the splash never dismisses and
+        // the nav/menus have no handlers). The cache is now only an offline
+        // fallback via didFailProvisionalNavigation.
         loadClearingStaleCacheIfUpgraded()
+
     }
 
     /// A different signed-in user on this device must never see the previous
