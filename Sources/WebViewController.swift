@@ -17,6 +17,7 @@ final class WebViewController: UIViewController {
     private var hasStartedInitialLoad = false
     private var didRunCacheSelfTest = false
     private var didRunNavTest = false
+    private var hasLoadedOnce = false
     private let statusLabel = UILabel()
     private let offlineScheme = OfflineSchemeHandler()
     private var lastCacheError = "none"
@@ -225,11 +226,12 @@ extension WebViewController: WKNavigationDelegate {
     /// spinner for ~14s after the page was already visible.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         mark("commit")
-        setLoading(false)
+        if hasLoadedOnce { setLoading(false) }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
+        hasLoadedOnce = true
         setLoading(false)
         if webView.url?.scheme == OfflineSchemeHandler.scheme {
             let p = webView.url?.path ?? "/"
