@@ -50,6 +50,22 @@ final class Bridge: NSObject, WKScriptMessageHandler {
               });
             }
           };
+          // Link navigation lives here, not in page JS: a page served from the
+          // cache may not load nav.js, and WebKit silently drops JS-initiated
+          // navigation to a custom scheme, which left links dead.
+          document.addEventListener('click', function (e) {
+            var el = e.target;
+            while (el && el.tagName !== 'A') { el = el.parentElement; }
+            if (!el) { return; }
+            var href = el.getAttribute('href');
+            if (!href || href.charAt(0) !== '/' || href.charAt(1) === '/' || href.indexOf('#') === 0) { return; }
+            if (/^\/(auth|oauth|login|logout|signin|signup|sso)(\/|\?|$)/i.test(href)) { return; }
+            if (el.target === '_blank' || el.hasAttribute('download')) { return; }
+            e.preventDefault();
+            try {
+              window.IOSBridge.call('nav.open', { path: href }).catch(function () { window.location.assign(href); });
+            } catch (err) { window.location.assign(href); }
+          }, true);
         })();
         """
         return WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true)
