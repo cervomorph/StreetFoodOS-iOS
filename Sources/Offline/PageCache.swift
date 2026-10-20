@@ -155,7 +155,7 @@ final class PageCache {
     /// Snapshot format version. v2 inlines CSS and strips scripts; entries
     /// written by v1 are unreachable by design, so an upgrade forces a rewrite
     /// instead of serving an unstyled copy offline.
-    static let formatVersion = 2
+    static let formatVersion = 3
 
     private func fileURL(for path: String) -> URL {
         let digest = SHA256.hash(data: Data("v\(PageCache.formatVersion)|\(path)".utf8))

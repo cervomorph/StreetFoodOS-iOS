@@ -16,6 +16,7 @@ final class WebViewController: UIViewController {
     private var hasStartedInitialLoad = false
     private var didRunCacheSelfTest = false
     private let statusLabel = UILabel()
+    private let offlineScheme = OfflineSchemeHandler()
     private var lastCacheError = "none"
     private let launchStart = Date()
     private var timeline: [String] = []
@@ -191,6 +192,7 @@ final class WebViewController: UIViewController {
         // Persistent store — till logins must survive app restarts.
         config.websiteDataStore = .default()
         config.applicationNameForUserAgent = "StreetFoodOS-iOS/\(AppConfig.version)"
+        config.setURLSchemeHandler(offlineScheme, forURLScheme: OfflineSchemeHandler.scheme)
         config.userContentController.add(bridge, name: Bridge.handlerName)
         config.userContentController.addUserScript(bridge.makeUserScript())
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -226,117 +228,7 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
-        webView.evaluateJavaScript("""
-        (function () {
-          try {
-            var n = performance.getEntriesByType('navigation')[0];
-            if (!n) { return 'no-nav-timing'; }
-            return 'ttfb=' + Math.round(n.responseStart - n.requestStart) +
-                   'ms dns=' + Math.round(n.domainLookupEnd - n.domainLookupStart) +
-                   'ms tls=' + Math.round(n.connectEnd - n.connectStart) +
-                   'ms total=' + Math.round(n.duration) + 'ms';
-          } catch (e) { return 'timing-error'; }
-        })();
-        """) { [weak self] result, _ in
-            guard let self, let text = result as? String else { return }
-            self.mark(text.replacingOccurrences(of: " ", with: " "))
-            self.refreshCacheStatus()
-        }
-        setLoading(false)
-        if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
-        refreshCacheStatus()
-        cacheCurrentPage()
-        // P0 bridge self-test — proves the native round-trip on every load
-        // (visible via Safari's Web Inspector on a real device).
-        webView.evaluateJavaScript(
-            "window.IOSBridge && window.IOSBridge.call('ping').then(function (r) { console.log('SFOS IOSBridge ping:', JSON.stringify(r)); })",
-            completionHandler: nil
-        )
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
-            return
-        }
-        if navigationAction.targetFrame?.isMainFrame == true { mark("policy") }
-        // In-app sign-in (2026-10-07): start social sign-ins in the SYSTEM auth
-        // session. Google blocks OAuth inside embedded webviews entirely, and
-        // even where it didn't, the system browser's session cookies would
-        // never reach this webview. The callback returns via the
-        // `streetfoodos://` scheme and we trade a one-time token for session
-        // cookies inside the webview (/auth/app-session).
-        if AppConfig.isAppHost(url.host ?? ""), isAuthInitiation(url) {
-            decisionHandler(.cancel)
-            startAppAuthSession(startingAt: url)
-            return
-        }
-        if navigationAction.targetFrame == nil {
-            // target=_blank (receipts, external docs) — never silently drop.
-            UIApplication.shared.open(url)
-            decisionHandler(.cancel)
-            return
-        }
-        if let host = url.host, !AppConfig.isAppHost(host) {
-            // External link — hand to the system browser.
-            UIApplication.shared.open(url)
-            decisionHandler(.cancel)
-            return
-        }
-        decisionHandler(.allow)
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        showLoadError(error)
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        showLoadError(error)
-    }
-
-    /// Save what the WebView actually rendered, encrypted, for offline use.
-    /// Auth screens are never cached — and hitting one wipes the cache.
-    private func cacheCurrentPage() {
-        guard let url = webView.url, let scheme = url.scheme, scheme == "http" || scheme == "https" else { return }
-        let path = url.path
-        // Only a deliberate sign-out wipes. Rendering /login must NOT drop the
-        // device key: a fresh install (or any expired session) lands on /login
-        // before the user signs in, and wiping there destroyed the key seconds
-        // after unlock, leaving the cache locked for the rest of the session.
-        if path == "/logout" {
-            PageCache.shared.wipe()
-            return
-        }
-        if path == "/login" { return }
-        guard PageCache.isCacheable(path) else { NSLog("SFOS_CACHE skip %@ (not cacheable)", path); return }
-        guard PageCache.shared.isUnlocked else { NSLog("SFOS_CACHE skip %@ (locked)", path); return }
-        webView.evaluateJavaScript("""
-        (function () {
-          try {
-            var css = '';
-            for (var i = 0; i < document.styleSheets.length; i++) {
-              try {
-                var rules = document.styleSheets[i].cssRules;
-                for (var j = 0; j < rules.length; j++) { css += rules[j].cssText + '\n'; }
-              } catch (e) {}
-            }
-            var clone = document.documentElement.cloneNode(true);
-            var heads = clone.querySelectorAll('link[rel="stylesheet"]');
-            for (var k = 0; k < heads.length; k++) { heads[k].remove(); }
-            var scripts = clone.querySelectorAll('script');
-            for (var m = 0; m < scripts.length; m++) { scripts[m].remove(); }
-            var style = document.createElement('style');
-            style.textContent = css;
-            (clone.querySelector('head') || clone).appendChild(style);
-            clone.setAttribute('data-sfos-offline-snapshot', '1');
-            return '<!DOCTYPE html>' + clone.outerHTML;
-          } catch (e) { return document.documentElement.outerHTML; }
-        })();
-        """) { result, error in
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { result, error in
             if let error { NSLog("SFOS_CACHE JS error for %@: %@", path, String(describing: error)) }
             guard let html = result as? String, html.count > 200 else {
                 NSLog("SFOS_CACHE skip %@ (html type=%@ len=%d)", path, String(describing: type(of: result)), (result as? String)?.count ?? -1)
