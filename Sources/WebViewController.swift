@@ -123,7 +123,13 @@ final class WebViewController: UIViewController {
             }
         }
         mark("lockShown")
-        logEnvironment()
+        // A REAL network load, hidden behind the lock. WebKit creates its
+        // NetworkProcess on demand and blocks the first navigation for ~12s
+        // waiting for it (policy -> prov gap, then a 315ms page). Paying that
+        // here, while the PIN is being typed, moves the cost off the user's
+        // first page.
+        mark("preload")
+        webView.load(URLRequest(url: AppConfig.launchURL))
         warmConnection()
         present(lock, animated: false)
     }
@@ -204,14 +210,6 @@ final class WebViewController: UIViewController {
         // also inset the page itself; that double-count made every 100vh page
         // taller than its visible area.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        // Boot WebKit's content process NOW (behind the lock screen). The first
-        // real navigation was waiting ~14s between the provisional load and
-        // commit, while the same URL answered in 41ms — that is process
-        // start-up, not network. A throwaway local page pays the cost early.
-        webView.loadHTMLString(
-            "<html><body style=\"margin:0;background:#11161d\"></body></html>",
-            baseURL: nil
-        )
         return webView
     }
 }
