@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import UIKit
 
 /// The `window.IOSBridge` native side — the iOS counterpart of the Android
 /// container's `window.AndroidBridge`. Thin native layer; the web app decides
@@ -102,6 +103,20 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 } catch {
                     completion(["ok": false, "error": "\(error)"])
                 }
+            }
+
+        case "haptic.impact":
+            let style = (args["style"] as? String) ?? "light"
+            DispatchQueue.main.async {
+                let gen: UIImpactFeedbackGenerator
+                switch style {
+                case "medium": gen = UIImpactFeedbackGenerator(style: .medium)
+                case "heavy": gen = UIImpactFeedbackGenerator(style: .heavy)
+                default: gen = UIImpactFeedbackGenerator(style: .light)
+                }
+                gen.prepare()
+                gen.impactOccurred()
+                completion(["ok": true])
             }
 
         case "nav.open":
