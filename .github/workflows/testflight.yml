@@ -95,7 +95,7 @@ jobs:
 
       - name: Verify the association in the exported IPA
         run: |
-          IPA=$(ls -t "$RUNNER_TEMP"/*.ipa 2>/dev/null | head -1)
+          IPA=$(ls -t "$RUNNER_TEMP/export"/*.ipa 2>/dev/null | head -1)
           echo "ipa: $IPA"
           if [ -z "$IPA" ]; then echo "ASSOC: NO IPA"; exit 0; fi
           rm -rf /tmp/ipa && mkdir -p /tmp/ipa
