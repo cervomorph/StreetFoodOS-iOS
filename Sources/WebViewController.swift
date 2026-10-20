@@ -15,6 +15,7 @@ final class WebViewController: UIViewController {
     private var cacheClearedForFailure = false
     private var hasStartedInitialLoad = false
     private var didRunCacheSelfTest = false
+    private var didRunNavTest = false
     private let statusLabel = UILabel()
     private let offlineScheme = OfflineSchemeHandler()
     private var lastCacheError = "none"
@@ -236,6 +237,10 @@ extension WebViewController: WKNavigationDelegate {
             return
         }
         if !didRunCacheSelfTest { didRunCacheSelfTest = true; runCacheSelfTest() }
+        if AppConfig.navTest, !didRunNavTest {
+            didRunNavTest = true
+            runNavigationTest(step: 0)
+        }
         enforceOwner()
         cacheCurrentPage()
     }
@@ -503,6 +508,55 @@ extension WebViewController: WKNavigationDelegate {
         })();
         """
         webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// CI probe: sign in if needed, load a page from the cache, click a nav
+    /// link, and report whether the navigation actually happened.
+    private func runNavigationTest(step: Int) {
+        switch step {
+        case 0:
+            webView.evaluateJavaScript("location.pathname") { [weak self] result, _ in
+                guard let self else { return }
+                let path = (result as? String) ?? "/"
+                NSLog("SFOS_NAVTEST step0 path=%@", path)
+                if path.hasPrefix("/login"), let user = AppConfig.testUser, let pass = AppConfig.testPass {
+                    let js = """
+                    (function(){var t=document.getElementById('pfCredToggle'); if(t){t.click();}
+                    var u=document.querySelector('input[name="username"]'), p=document.querySelector('input[name="password"]');
+                    if(u&&p){u.value='\(user)';p.value='\(pass)';
+                    var f=u.closest('form'); if(f){f.querySelector('button[type="submit"]').click();}}})();
+                    """
+                    self.webView.evaluateJavaScript(js, completionHandler: nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 8) { self.runNavigationTest(step: 1) }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.runNavigationTest(step: 1) }
+                }
+            }
+        case 1:
+            let path = webView.url?.path ?? "/dashboard"
+            NSLog("SFOS_NAVTEST step1 load cached path=%@", path)
+            if let url = URL(string: "\(OfflineSchemeHandler.scheme)://\(OfflineSchemeHandler.host)\(path)") {
+                webView.load(URLRequest(url: url))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.runNavigationTest(step: 2) }
+        case 2:
+            webView.evaluateJavaScript("location.href") { [weak self] result, _ in
+                NSLog("SFOS_NAVTEST step2 href=%@", (result as? String) ?? "nil")
+                let js = """
+                (function(){var a=document.querySelector('a[href^="/"]:not([href^="//"])');
+                if(!a){return 'no-link';} var h=a.getAttribute('href'); a.click(); return h;})();
+                """
+                self?.webView.evaluateJavaScript(js) { res, _ in
+                    NSLog("SFOS_NAVTEST step2 clicked=%@", (res as? String) ?? "nil")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.runNavigationTest(step: 3) }
+        case 3:
+            webView.evaluateJavaScript("location.href") { result, _ in
+                NSLog("SFOS_NAVTEST step3 after-click href=%@", (result as? String) ?? "nil")
+            }
+        default: break
+        }
     }
 
     private func presentDiagnostics(error: Error, ns: NSError) {

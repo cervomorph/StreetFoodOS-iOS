@@ -26,6 +26,17 @@ enum AppConfig {
     /// web view. Never used by a shipped build.
     static var skipLock: Bool { ProcessInfo.processInfo.arguments.contains("-SFOSSkipLock") }
 
+    /// Simulator/CI only: exercise cache-first navigation and log the result.
+    static var navTest: Bool { ProcessInfo.processInfo.arguments.contains("-SFOSNavTest") }
+    static var testUser: String? { value(after: "-SFOSUser") }
+    static var testPass: String? { value(after: "-SFOSPass") }
+
+    private static func value(after flag: String) -> String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     /// URL scheme registered by the app shell for auth callbacks (Info.plist
     /// CFBundleURLTypes) — the server returns sign-ins here, never to
     /// arbitrary URLs.

@@ -44,7 +44,12 @@ jobs:
           echo "app=$APP"
           xcrun simctl install "$DEVICE" "$APP"
           (xcrun simctl spawn "$DEVICE" log stream --style compact --predicate 'processImagePath CONTAINS "StreetFoodOS"' > /tmp/app.log 2>&1 &) || true
-          xcrun simctl launch "$DEVICE" com.cervomorph.streetfoodos -SFOSSkipLock 1 || true
+          xcrun simctl launch "$DEVICE" com.cervomorph.streetfoodos \
+            -SFOSSkipLock 1 \
+            -SFOSNavTest 1 \
+            -SFOSURL "https://dev.streetfoodos.com/dashboard" \
+            -SFOSUser "bencarter" \
+            -SFOSPass "EmberOak26" || true
           sleep "${{ github.event.inputs.wait_seconds }}"
           xcrun simctl io "$DEVICE" screenshot /tmp/shot.png || true
           sleep 2
@@ -52,7 +57,7 @@ jobs:
         if: always()
         run: |
           echo "=== SFOS log lines ==="
-          grep -E "SFOS_LOCK|SFOS_CACHE" /tmp/app.log | tail -40 || true
+          grep -E "SFOS_NAVTEST|SFOS_LAUNCH|SFOS_CACHE" /tmp/app.log | tail -40 || true
           echo "=== last 40 lines ==="
           tail -40 /tmp/app.log || true
       - uses: actions/upload-artifact@v4
