@@ -43,13 +43,14 @@ jobs:
           APP=$(find build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' | head -1)
           echo "app=$APP"
           xcrun simctl install "$DEVICE" "$APP"
-          (xcrun simctl spawn "$DEVICE" log stream --style compact --predicate 'processImagePath CONTAINS "StreetFoodOS"' > /tmp/app.log 2>&1 &) || true
-          xcrun simctl launch "$DEVICE" com.cervomorph.streetfoodos \
+          # --console-pty streams the app's own stdout/stderr, which is where
+          # NSLog output lands. The old log-stream predicate captured nothing.
+          (xcrun simctl launch --console-pty "$DEVICE" com.cervomorph.streetfoodos \
             -SFOSSkipLock 1 \
             -SFOSNavTest 1 \
             -SFOSURL "https://dev.streetfoodos.com/dashboard" \
             -SFOSUser "bencarter" \
-            -SFOSPass "EmberOak26" || true
+            -SFOSPass "EmberOak26" > /tmp/app.log 2>&1 &) || true
           sleep "${{ github.event.inputs.wait_seconds }}"
           xcrun simctl io "$DEVICE" screenshot /tmp/shot.png || true
           sleep 2
