@@ -59,7 +59,8 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             if (!el) { return; }
             var href = el.getAttribute('href');
             if (!href || href.charAt(0) !== '/' || href.charAt(1) === '/' || href.indexOf('#') === 0) { return; }
-            if (/^\/(auth|oauth|login|logout|signin|signup|sso)(\/|\?|$)/i.test(href)) { return; }
+            var seg = href.split('?')[0].split('/')[1] || '';
+            if (['auth','oauth','login','logout','signin','signup','sso'].indexOf(seg) !== -1) { return; }
             if (el.target === '_blank' || el.hasAttribute('download')) { return; }
             e.preventDefault();
             try {
