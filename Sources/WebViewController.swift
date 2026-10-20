@@ -17,6 +17,7 @@ final class WebViewController: UIViewController {
     private var hasStartedInitialLoad = false
     private var didRunCacheSelfTest = false
     private var didRunNavTest = false
+    private var lastFinishedPath = ""
     private let statusLabel = UILabel()
     private let offlineScheme = OfflineSchemeHandler()
     private var lastCacheError = "none"
@@ -68,6 +69,7 @@ final class WebViewController: UIViewController {
         // navigation (WebKitErrorDomain 300) and left a blank page.
 
         makeLoadingOverlay()
+        loadingOverlay.isHidden = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -217,6 +219,11 @@ final class WebViewController: UIViewController {
 extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // Keep the branded screen for the load that follows a successful
+        // sign-in, but not for the launch load.
+        if lastFinishedPath == "/login", (webView.url?.path ?? "") != "/login" {
+            setLoading(true)
+        }
         mark("prov")
     }
 
@@ -230,6 +237,7 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         mark("loaded")
+        lastFinishedPath = webView.url?.path ?? ""
         setLoading(false)
         if webView.url?.scheme == OfflineSchemeHandler.scheme {
             let p = webView.url?.path ?? "/"
@@ -327,7 +335,8 @@ extension WebViewController: WKNavigationDelegate {
         // Load IMMEDIATELY. WebKit's removeData() takes 10-15s on a populated
         // store, and every new build number counted as an "upgrade", so the
         // purge gated the first load on every install.
-        setLoading(true)
+        // No overlay here: the login screen is the first thing the operator
+        // should see. The overlay is reserved for the post-login load.
         webView.load(URLRequest(url: AppConfig.launchURL))
         guard last != build else { return }
         // Cheap migration for older builds: drop any service-worker
