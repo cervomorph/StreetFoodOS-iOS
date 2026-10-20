@@ -25,7 +25,9 @@ final class OfflineAssetStore {
         if let directory {
             dir = directory
         } else {
-            let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            // Application Support, NOT Caches: iOS purges Caches under disk
+            // pressure, which would silently strip the styles and scripts again.
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
             dir = base.appendingPathComponent("OfflineAssets", isDirectory: true)
         }

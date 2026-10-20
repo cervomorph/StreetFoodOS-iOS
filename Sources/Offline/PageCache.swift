@@ -23,6 +23,16 @@ final class PageCache {
         var path: String
         var html: String
         var savedAt: Date
+        /// Wall-clock time the copy was taken (same as savedAt, explicit for the
+        /// freshness policy).
+        var fetchedAt: Date?
+        /// Server ETag, so an online visit can confirm with a 304 instead of
+        /// downloading the page again.
+        var etag: String?
+        /// App build that produced the copy — a deploy invalidates every page.
+        var build: String?
+        /// Signed-in user the copy belongs to; a different user wipes the cache.
+        var owner: String?
     }
 
     enum CacheError: Error {
@@ -97,10 +107,12 @@ final class PageCache {
 
     // MARK: - Store
 
-    func save(path: String, html: String, at date: Date = Date()) throws {
+    func save(path: String, html: String, at date: Date = Date(),
+              etag: String? = nil, build: String? = nil, owner: String? = nil) throws {
         guard let key = deviceKey else { throw CacheError.locked }
         guard PageCache.isCacheable(path) else { throw CacheError.notCacheable }
-        let entry = Entry(path: path, html: html, savedAt: date)
+        let entry = Entry(path: path, html: html, savedAt: date,
+                          fetchedAt: date, etag: etag, build: build, owner: owner)
         let payload = try JSONEncoder().encode(entry)
         let sealedPayload = try CacheCrypto.seal(payload, key: key)
         let blob = try JSONEncoder().encode(sealedPayload)
