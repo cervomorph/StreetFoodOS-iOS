@@ -50,7 +50,7 @@ final class AppLock {
     /// there is no key (fresh install, wiped, or a different user).
     @discardableResult
     func silentUnlock() -> Bool {
-        guard let key = try? KeyStore.loadDeviceKey(), let key else { return false }
+        guard let key = (try? KeyStore.loadDeviceKey()) ?? nil else { return false }
         do {
             try PageCache.shared.unlock(withDeviceKey: key)
             return PageCache.shared.isUnlocked
