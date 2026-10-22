@@ -28,7 +28,7 @@ final class LockViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.067, green: 0.086, blue: 0.114, alpha: 1)
+        view.backgroundColor = UIColor(red: 0x1a/255.0, green: 0x1d/255.0, blue: 0x23/255.0, alpha: 1)
 
         let title = UILabel()
         title.text = mode == .setup ? "Protect this device" : "StreetFood OS is locked"
@@ -39,7 +39,7 @@ final class LockViewController: UIViewController {
         message.text = mode == .setup
             ? "Choose a 4-digit PIN. Saved pages are encrypted with it — without it they cannot be read."
             : "Enter your PIN to open the saved pages."
-        message.textColor = UIColor(white: 0.6, alpha: 1)
+        message.textColor = UIColor(red: 0xe2/255.0, green: 0xe8/255.0, blue: 0xf0/255.0, alpha: 0.7)
         message.font = .systemFont(ofSize: 13)
         message.numberOfLines = 0
         message.textAlignment = .center
@@ -65,10 +65,11 @@ final class LockViewController: UIViewController {
                 let button = UIButton(type: .system)
                 button.setTitle(key, for: .normal)
                 button.setTitleColor(.white, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: key == "⌫" ? 20 : 24, weight: .medium)
-                button.layer.cornerRadius = 8
+                button.titleLabel?.font = .systemFont(ofSize: key == "⌫" ? 20 : 27, weight: .regular)
+                button.layer.cornerRadius = 4
                 button.layer.borderWidth = 1
-                button.layer.borderColor = UIColor(white: 0.25, alpha: 1).cgColor
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 73).isActive = true
+                button.layer.borderColor = UIColor(red: 0x3a/255.0, green: 0x3f/255.0, blue: 0x4a/255.0, alpha: 1).cgColor
                 button.addTarget(self, action: #selector(tapKey(_:)), for: .touchUpInside)
                 button.heightAnchor.constraint(equalToConstant: 52).isActive = true
                 line.addArrangedSubview(button)
