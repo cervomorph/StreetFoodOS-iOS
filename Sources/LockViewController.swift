@@ -68,7 +68,6 @@ final class LockViewController: UIViewController {
                 button.titleLabel?.font = .systemFont(ofSize: key == "⌫" ? 20 : 27, weight: .regular)
                 button.layer.cornerRadius = 4
                 button.layer.borderWidth = 1
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 73).isActive = true
                 button.layer.borderColor = UIColor(red: 0x3a/255.0, green: 0x3f/255.0, blue: 0x4a/255.0, alpha: 1).cgColor
                 button.addTarget(self, action: #selector(tapKey(_:)), for: .touchUpInside)
                 button.heightAnchor.constraint(equalToConstant: 52).isActive = true
