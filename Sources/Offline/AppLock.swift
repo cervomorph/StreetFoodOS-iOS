@@ -36,11 +36,28 @@ final class AppLock {
         let key = CacheCrypto.makeDeviceKey()
         let wrap = try CacheCrypto.wrap(deviceKey: key, secret: pin)
         try KeyStore.saveWrap(wrap, for: .pinWrap)
-        try KeyStore.delete(item: .deviceKey)
+        // Keep a device-protected copy so the cache can unlock silently. The
+        // PIN stays the recovery path; prompting on every launch was the thing
+        // Kit objected to.
+        try? KeyStore.saveDeviceKey(key)
         try KeyStore.saveOwner("device")
         try PageCache.shared.unlock(withDeviceKey: key)
         defaults.removeObject(forKey: attemptsKey)
         defaults.removeObject(forKey: lockUntilKey)
+    }
+
+    /// Unlock with the Keychain-held device key — no UI. Returns false when
+    /// there is no key (fresh install, wiped, or a different user).
+    @discardableResult
+    func silentUnlock() -> Bool {
+        guard let key = try? KeyStore.loadDeviceKey(), let key else { return false }
+        do {
+            try PageCache.shared.unlock(withDeviceKey: key)
+            return PageCache.shared.isUnlocked
+        } catch {
+            NSLog("SFOS_LOCK silent unlock failed: %@", String(describing: error))
+            return false
+        }
     }
 
     /// Returns true on success; false on a wrong PIN (attempts recorded).

@@ -109,6 +109,16 @@ final class WebViewController: UIViewController {
             NSLog("SFOS_LOCK skipped (debug flag), cache unlocked=%d", PageCache.shared.isUnlocked ? 1 : 0)
             return
         }
+        // Silent path first: no prompt when the Keychain key can open the cache.
+        if AppLock.shared.hasPin, AppLock.shared.silentUnlock() {
+            mark("unlockedSilently")
+            if !hasStartedInitialLoad {
+                hasStartedInitialLoad = true
+                mark("loadStart")
+                loadInitialSmart()
+            }
+            return
+        }
         guard presentedViewController == nil else { return }
         let mode: LockViewController.Mode = AppLock.shared.hasPin ? .unlock : .setup
         if mode == .unlock && PageCache.shared.isUnlocked { return }
@@ -144,6 +154,10 @@ final class WebViewController: UIViewController {
         guard AppLock.shared.hasPin, let at = backgroundedAt else { return }
         guard Date().timeIntervalSince(at) >= AppLock.backgroundLockAfter else { return }
         AppLock.shared.lock()
+        // Returning from the background is not a reason to ask for the PIN:
+        // try the Keychain key, and only fall back to the lock screen if it
+        // cannot open the cache.
+        if AppLock.shared.silentUnlock() { return }
         DispatchQueue.main.async { [weak self] in self?.presentLockIfNeeded() }
     }
 
